@@ -72,7 +72,7 @@ client create
   → element list extraction
 ```
 
-submit 間隔は既定 1.35 秒以上とし、rate limit 応答の retry-after を尊重する。on-demand job は一ファイルずつ送信し、10 MB（10,000,000 bytes）を超えるファイルは network 前に拒否する。poll timeout は job のリモート取消を意味しない。diagnostics は秘密を除いて保存する。
+Unstructured の公式仕様（2026-09-07 確認）では、一つのローカルファイル処理 job に最大 10 ファイル、各 50 MB まで送信でき、submit 間隔は 1 秒以上、同時実行は最大 5 job とされる。本システムはより厳格な実装契約として、一要求一ファイル、10 MB（10,000,000 bytes）以下、既定 1.35 秒以上の submit 間隔を採用する。rate limit 応答の retry-after を尊重する。poll timeout は job のリモート取消を意味しない。diagnostics は秘密を除いて保存する。
 
 ### 3.4 応答保存
 

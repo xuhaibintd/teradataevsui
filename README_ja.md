@@ -1,7 +1,7 @@
 # teradataevsui — Teradata Vector Store UI
 
 > **言語:** [English](README.md) | 日本語
-<!-- Source-SHA256: b79fd3ace2ad0ea4ab181a6be73aaab5a8043b629ada025f2f9ebdff3e8ce572 -->
+<!-- Source-SHA256: 8a5c3573c917157bdb4513e60af41c0258106ddfba3ad3194387652a5527df70 -->
 
 Teradata Vector Store は、Teradata データ上でベクトル検索・取得機能を提供します。ドキュメントのチャンクと埋め込みを管理対象の Vector Store として保存し、`VectorStore` と `VSManager` を通じて、作成、ヘルスチェック、一覧表示、削除、セマンティック類似検索、および根拠付き Q&A の操作を公開します。
 
@@ -197,8 +197,8 @@ Invoke-RestMethod http://127.0.0.1:8010/healthz
 2. 管理者は、環境で必要なデータベース、UES、および証明書の認証情報を含む再利用可能なプロファイルを、**System Configuration → Database Connections** で一度作成します。シークレットと PEM の内容は SQLite で暗号化されます。
 3. 保存済みの **Database connection** プロファイルを選択します。ページには、シークレットを公開しない読み取り専用の概要が表示されます。
 4. **Connect** を選択します。成功結果により、データベースコンテキストの作成と Vector Store 認証の両方が確認されます。
-5. **Refresh management data** を選択して、Vector Store のヘルス状態、インストール済み `teradatagenai` のバージョン、互換性警告、および V1 Vector Store／V2 Collection の統合一覧を読み込みます。この更新は、接続後に自動実行されません。
-6. リソースを絞り込むか選択して、詳細と利用可能な操作を確認します。管理者は、アクティブな EVS セッションを読み込み、選択したユーザーのアクティブな EVS セッションをすべて切断することもできます。
+5. **Refresh management data** を選択して、Vector Store のヘルス状態、インストール済み `teradatagenai` のバージョン、互換性警告、および統一された 6 列の **Vector stores** 一覧を読み込みます。この更新は、接続後に自動実行されません。
+6. 行を絞り込むか、リソースをローカルで選択して現在の操作対象を設定します。この選択ではリモート要求を行いません。管理者は、別途アクティブな EVS セッションを読み込み、選択したユーザーのアクティブな EVS セッションをすべて切断できます。
 
 ### Vector Store の作成
 
@@ -469,8 +469,8 @@ BookRAG は、汎用ドキュメントチャットボットではなく、高価
 
 ## 現在の動作
 
-- Connect & Manage は 1 つの **Refresh management data** 操作で、接続状態、Vector Store のヘルス状態、`teradatagenai` の実行時バージョン、互換性警告、および V1 Vector Store／V2 Collection の統合一覧を読み込みます。
-- 管理対象リソースを選択すると、その識別情報、構成、状態、ファイル取り込み情報、権限、およびサインイン中のロールに許可された操作が読み込まれます。
+- Connect & Manage は 1 つの **Refresh management data** 操作で、接続状態、Vector Store のヘルス状態、`teradatagenai` の実行時バージョン、互換性警告、および統一された 1 つの **Vector stores** 一覧を読み込みます。
+- 絞り込みと行選択はローカル操作であり、サーバー、SDK、データベースを呼び出しません。保存済みのリソース種別とサインイン中のロールにより、削除操作が利用可能かどうかが決まります。
 - 管理データの更新と Vector Store Retrieval の `Run List` は独立しています。管理対象リソースを更新または削除しても、検索用ドロップダウンは暗黙に変更されません。
 - 接続時に管理データは自動読み込みされません。明示的な更新により、リモート SDK 呼び出しをユーザーが制御できます。
 - 管理者はアクティブな EVS 接続セッションを確認し、他のユーザーに影響を与えず、選択したユーザーのアクティブな EVS セッションをすべて切断できます。
@@ -542,10 +542,10 @@ Node.js のビルド手順も TypeScript の依存関係もありません。テ
 公式リファレンス：
 - Workflow ドキュメント：https://docs.unstructured.io/api-reference/workflow/workflows
 - Workflow 利用可能モデル：https://docs.unstructured.io/api-reference/workflow/models
-- Workflow UI ガイド：https://docs.unstructured.io/ui/workflows
-- Partition Endpoint 概要：https://docs.unstructured.io/platform-api/partition-api/overview
-- Partition Endpoint パラメータ：https://docs.unstructured.io/api-reference/partition/api-parameters
-- パーティショニング戦略ガイド：https://docs.unstructured.io/ui/partitioning
+- Workflow UI ガイド：https://docs.unstructured.io/pipelines/workflows
+- Partition Endpoint 概要：https://docs.unstructured.io/api-reference/legacy-api/partition/overview
+- Partition Endpoint パラメータ：https://docs.unstructured.io/api-reference/legacy-api/partition/api-parameters
+- パーティショニング戦略ガイド：https://docs.unstructured.io/concepts/partitioning
 
 ### 公式 API の選択
 
@@ -639,7 +639,7 @@ Node.js のビルド手順も TypeScript の依存関係もありません。テ
 - `Auto/High Res + enrichment nodes`：ファイル内容とルーティングされたパーティションパスが対象となる場合にサポートされます。
 - `VLM + separate image/table/OCR enrichment nodes`：追加しないでください。VLM がそれらの出力を提供します。NER は引き続き使用できます。
 - model-backed の画像／テーブル説明、table-to-HTML、生成 OCR、NER ノードは、選択した `provider_type` と `model` を送信します。`twopass_image_description` と `twopass_table2html` は platform-managed model のため、両方を送信しません。
-- on-demand job は一リクエストにつき一ファイルを送信し、10 MB を超えるファイルは network I/O 前に拒否します。
+- teradataevsui の on-demand 実装は一リクエストにつき一ファイルを送信し、10 MB を超えるファイルは network I/O 前に拒否します。これらは現在の Unstructured platform の最大値ではなく、より厳格なアプリケーション制約です。
 
 ### 現在の teradataevsui のデフォルト値
 
@@ -958,22 +958,28 @@ sequenceDiagram
 ## 主なルート
 
 - `GET /` Home
-- `GET /login`, `POST /login`, `POST /logout`
-- `GET /admin/users`, `POST /admin/connection`, `POST /admin/connections/{id}/delete`, `POST /admin/users/create`
-- `POST /admin/users/{username}/toggle`, `/role`, `/password`
+- `GET /login`, `POST /login`, `GET /setup`, `POST /setup`, `POST /logout`
+- `GET /admin/users`, `POST /admin/connection`, `POST /admin/connections/{connection_id}/delete`, `POST /admin/unstructured-config`, `POST /admin/users/create`
+- `POST /admin/users/{username}/toggle`, `POST /admin/users/{username}/role`, `POST /admin/users/{username}/password`
 - `GET /admin/users/export`, `POST /admin/users/import`
+- `GET /ui/jobs/{job_id}`, `POST /ui/jobs/{job_id}/cancel`
 - `POST /ui/evs/connect`, `POST /ui/evs/reset`
 - `POST /ui/evs/refresh`, `POST /ui/evs/select`, `POST /ui/evs/destroy`
 - `POST /ui/evs/sessions`, `POST /ui/evs/sessions/disconnect`
 - `POST /ui/evs/health`, `POST /ui/evs/list`（互換性エンドポイント）
 - `POST /ui/chat/vs-list`
-- `POST /ui/create/upload-documents`, `POST /ui/create/upload`
+- `POST /ui/create/upload-documents`, `POST /ui/create/parse-documents`, `POST /ui/create/generate-csv`, `POST /ui/create/load-csv-tables`
+- `POST /ui/create/multi-format/parse-documents`, `POST /ui/create/multi-format/generate-csv`, `POST /ui/create/multi-format/load-csv-table`
+- `POST /ui/create/upload`
 - `POST /ui/chat`, `POST /ui/chat/reset`
-- `POST /admin/unstructured-config`
+- `POST /ui/admin/bookrag-section-rules`
+- `GET /ui/admin/document-governance`, `GET /ui/admin/document-metadata`
+- `POST /ui/admin/document-metadata/autofill`, `POST /ui/admin/document-metadata/save`, `POST /ui/admin/document-metadata/import`, `GET /ui/admin/document-metadata/export`
 - `GET /ui/admin/document-relations`
-- `POST /ui/admin/document-relations/initialize`, `/save`, `/delete`, `/import`
+- `POST /ui/admin/document-relations/initialize`, `POST /ui/admin/document-relations/save`, `POST /ui/admin/document-relations/delete`, `POST /ui/admin/document-relations/import`
 - `GET /ui/admin/document-relations/export`
-- `GET /api/bookrag/schema`, `GET|POST /api/bookrag/retrieve`, `GET|POST /api/bookrag/answer`
+- `GET /ui/admin/json-inspector`
+- `GET /api/bookrag/schema`, `GET /api/bookrag/retrieve`, `POST /api/bookrag/retrieve`, `GET /api/bookrag/answer`, `POST /api/bookrag/answer`
 - `GET /healthz`
 
 スキーマ、バックアップ、およびアーティファクトコマンドについては、[運用](docs/operations_ja.md) に記載されています。モジュール依存規則と単一プロセスランタイムについては、[アーキテクチャ](docs/architecture_ja.md) に記載されています。

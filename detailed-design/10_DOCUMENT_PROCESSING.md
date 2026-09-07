@@ -66,7 +66,7 @@ Upload
 
 Parse は保存文書ごとに Unstructured workflow を実行する。入力は処理設定、対象文書、共有 Unstructured URL/key である。複数文書は設定上限の範囲で並行処理できるが、API submission 間隔を守る。
 
-- `DOC-UNSTRUCTURED-001`：on-demand Jobs API の一ファイル上限 10 MB（10,000,000 bytes）を送信前に検証する。upload 保存上限とは別の外部 API 契約であり、超過時は対象ファイル名を含む file result を失敗として残す。
+- `DOC-UNSTRUCTURED-001`：本システムの on-demand job 実装上限である一ファイル 10 MB（10,000,000 bytes）を送信前に検証する。これは upload 保存上限とは別の、現在の外部サービス許容量より厳格なアプリケーション制約であり、超過時は対象ファイル名を含む file result を失敗として残す。
 
 manifest は最低限、artifact type、schema version、parse_run_id、作成時刻、Vector Store 名、全体 status、文書配列を持つ。各文書には doc_id、filename、source path、raw JSON path、checksum、element count、status、error、workflow/job metadata を持たせる。
 

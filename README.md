@@ -197,8 +197,8 @@ The expected response is `{"status":"ok"}`. This endpoint checks the teradataevs
 2. An administrator creates the reusable profile once under **System Configuration → Database Connections**, including the database, UES, and certificate credentials required by the environment. Secrets and PEM contents are encrypted in SQLite.
 3. Select a saved **Database connection** profile. The page shows a read-only summary without exposing its secrets.
 4. Select **Connect**. A successful result confirms both database context creation and Vector Store authentication.
-5. Select **Refresh management data** to load Vector Store health, the installed `teradatagenai` version, compatibility warnings, and the combined V1 Vector Store/V2 Collection inventory. This refresh does not run automatically after connecting.
-6. Filter or select a resource to inspect its details and available actions. Administrators can also load active EVS sessions and disconnect all active EVS sessions for the selected users.
+5. Select **Refresh management data** to load Vector Store health, the installed `teradatagenai` version, compatibility warnings, and the unified six-column **Vector stores** inventory. This refresh does not run automatically after connecting.
+6. Filter rows or select a resource locally to set the current action target; this selection does not issue a remote request. Administrators can separately load active EVS sessions and disconnect all active EVS sessions for the selected users.
 
 ### Create a vector store
 
@@ -469,8 +469,8 @@ Section construction uses Unstructured structure metadata where available, with 
 
 ## Current Behavior
 
-- Connect & Manage uses one **Refresh management data** action to load connection status, Vector Store health, the `teradatagenai` runtime version, compatibility warnings, and a combined V1 Vector Store/V2 Collection inventory.
-- Selecting a managed resource loads its identity, configuration, status, file-ingestion information, permissions, and the actions allowed for the signed-in role.
+- Connect & Manage uses one **Refresh management data** action to load connection status, Vector Store health, the `teradatagenai` runtime version, compatibility warnings, and one unified **Vector stores** inventory.
+- Filtering and row selection are local operations and do not call the server, SDK, or database. The stored resource kind and signed-in role determine whether the delete action is available.
 - The management refresh and Vector Store Retrieval `Run List` are independent. Refreshing or deleting a management resource does not implicitly change the retrieval dropdown.
 - Management data is not loaded automatically on connect; the explicit refresh keeps remote SDK calls under user control.
 - Administrators can inspect active EVS connection sessions and disconnect all active EVS sessions for the selected users without affecting other users.
@@ -543,10 +543,10 @@ This project should follow Unstructured's current hosted API guidance:
 Official references:
 - Workflow docs: https://docs.unstructured.io/api-reference/workflow/workflows
 - Workflow available models: https://docs.unstructured.io/api-reference/workflow/models
-- Workflow UI guide: https://docs.unstructured.io/ui/workflows
-- Partition Endpoint overview: https://docs.unstructured.io/platform-api/partition-api/overview
-- Partition Endpoint parameters: https://docs.unstructured.io/api-reference/partition/api-parameters
-- Partitioning strategy guide: https://docs.unstructured.io/ui/partitioning
+- Workflow UI guide: https://docs.unstructured.io/pipelines/workflows
+- Partition Endpoint overview: https://docs.unstructured.io/api-reference/legacy-api/partition/overview
+- Partition Endpoint parameters: https://docs.unstructured.io/api-reference/legacy-api/partition/api-parameters
+- Partitioning strategy guide: https://docs.unstructured.io/concepts/partitioning
 
 ### Official API Choice
 
@@ -640,7 +640,7 @@ Official references:
 - `Auto/High Res + enrichment nodes`: supported when the file content and routed partition path are eligible.
 - `VLM + separate image/table/OCR enrichment nodes`: do not add them; VLM already provides those outputs. NER remains allowed.
 - Model-backed image/table description, table-to-HTML, generative OCR, and NER nodes send the selected `provider_type` and `model`. `twopass_image_description` and `twopass_table2html` omit both settings because the platform manages their models.
-- On-demand jobs submit one file per request and reject files larger than 10 MB before network I/O.
+- The teradataevsui on-demand implementation submits one file per request and rejects files larger than 10 MB before network I/O. These are stricter application constraints, not the current Unstructured platform maxima.
 
 ### Current teradataevsui Defaults
 
@@ -959,22 +959,28 @@ sequenceDiagram
 ## Main Routes
 
 - `GET /` Home
-- `GET /login`, `POST /login`, `POST /logout`
-- `GET /admin/users`, `POST /admin/connection`, `POST /admin/connections/{id}/delete`, `POST /admin/users/create`
-- `POST /admin/users/{username}/toggle`, `/role`, `/password`
+- `GET /login`, `POST /login`, `GET /setup`, `POST /setup`, `POST /logout`
+- `GET /admin/users`, `POST /admin/connection`, `POST /admin/connections/{connection_id}/delete`, `POST /admin/unstructured-config`, `POST /admin/users/create`
+- `POST /admin/users/{username}/toggle`, `POST /admin/users/{username}/role`, `POST /admin/users/{username}/password`
 - `GET /admin/users/export`, `POST /admin/users/import`
+- `GET /ui/jobs/{job_id}`, `POST /ui/jobs/{job_id}/cancel`
 - `POST /ui/evs/connect`, `POST /ui/evs/reset`
 - `POST /ui/evs/refresh`, `POST /ui/evs/select`, `POST /ui/evs/destroy`
 - `POST /ui/evs/sessions`, `POST /ui/evs/sessions/disconnect`
 - `POST /ui/evs/health`, `POST /ui/evs/list` (compatibility endpoints)
 - `POST /ui/chat/vs-list`
-- `POST /ui/create/upload-documents`, `POST /ui/create/upload`
+- `POST /ui/create/upload-documents`, `POST /ui/create/parse-documents`, `POST /ui/create/generate-csv`, `POST /ui/create/load-csv-tables`
+- `POST /ui/create/multi-format/parse-documents`, `POST /ui/create/multi-format/generate-csv`, `POST /ui/create/multi-format/load-csv-table`
+- `POST /ui/create/upload`
 - `POST /ui/chat`, `POST /ui/chat/reset`
-- `POST /admin/unstructured-config`
+- `POST /ui/admin/bookrag-section-rules`
+- `GET /ui/admin/document-governance`, `GET /ui/admin/document-metadata`
+- `POST /ui/admin/document-metadata/autofill`, `POST /ui/admin/document-metadata/save`, `POST /ui/admin/document-metadata/import`, `GET /ui/admin/document-metadata/export`
 - `GET /ui/admin/document-relations`
-- `POST /ui/admin/document-relations/initialize`, `/save`, `/delete`, `/import`
+- `POST /ui/admin/document-relations/initialize`, `POST /ui/admin/document-relations/save`, `POST /ui/admin/document-relations/delete`, `POST /ui/admin/document-relations/import`
 - `GET /ui/admin/document-relations/export`
-- `GET /api/bookrag/schema`, `GET|POST /api/bookrag/retrieve`, `GET|POST /api/bookrag/answer`
+- `GET /ui/admin/json-inspector`
+- `GET /api/bookrag/schema`, `GET /api/bookrag/retrieve`, `POST /api/bookrag/retrieve`, `GET /api/bookrag/answer`, `POST /api/bookrag/answer`
 - `GET /healthz`
 
 Schema, backup, and artifact commands are documented in [Operations](docs/operations.md). Module dependency rules and the single-process runtime are documented in [Architecture](docs/architecture.md).

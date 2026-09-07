@@ -34,7 +34,7 @@
 | `EVSUI_API_TOKEN` | 空 | 外部 API 有効時に必須 |
 | `EVSUI_CSRF_ENABLED` | `true` | ブラウザー変更要求の同一生成元検証 |
 | `EVSUI_MAX_UPLOAD_BYTES` | `104857600` | 1 アップロード上限 |
-| `EVSUI_ARTIFACT_RETENTION_DAYS` | `30` | 制品の標準保存日数 |
+| `EVSUI_ARTIFACT_RETENTION_DAYS` | `30` | 成果物の標準保存日数 |
 | `EVSUI_ARTIFACT_CLEANUP_ENABLED` | `false` | 実削除を許可する明示スイッチ |
 | `EVSUI_JOB_STALE_SECONDS` | `900` | stale 判定。60 秒以上 |
 | `EVS_VECTORSTORE_READY_TIMEOUT_SECONDS` | `7200` | Ready 待機上限。60 秒以上 |

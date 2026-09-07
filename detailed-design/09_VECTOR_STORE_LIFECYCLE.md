@@ -49,15 +49,15 @@ Refresh management data
 
 - `VS-LIST-001`：更新前の選択名が新一覧に存在する場合は保持し、存在しない場合だけ解除する。
 - `VS-LIST-002`：Description 補完は上限付き並列処理と request 内 cache を使う。
-- `VS-LIST-003`：一部詳細の `403` や失敗で一覧全体を失敗させない。該当列を `Unavailable` とし warning を残す。
+- `VS-LIST-003`：一部詳細の `403` や失敗で一覧全体を失敗させない。該当セルは空白のままとし、管理領域に warning を残す。正常に空値が返された場合は warning を出さない。
 - `VS-LIST-004`：health と list の一方が失敗した場合、利用可能な結果と失敗状態を区別する。
 - `VS-LIST-005`：単なる行選択は server、SDK、DB を呼ばない。
 
 ## 5. Description と BookRAG
 
-Description は一覧応答の alias を優先し、不足時に正式な詳細 API から取得する。取得できた空文字は `Not provided`、取得不能は `Unavailable` とする。
+Description は一覧応答の alias を優先し、不足時に正式な詳細 API から取得する。取得できた空文字と取得不能はどちらもセルを空白にするが、取得不能の場合だけ管理領域に warning を表示して区別する。
 
-`unstructured_bookrag_flg` は内部識別 marker である。表示時は marker を除去して BookRAG badge に変換する。BookRAG Governance の対象判定は、この marker または作成マニフェストの確定情報を使い、資源名の文字列規則で推測しない。
+`unstructured_bookrag_flg` は BookRAG 識別 marker である。Description は marker を含めて応答内容を改変せず表示する。BookRAG Governance の対象判定は、この marker または作成マニフェストの確定情報を使い、資源名の文字列規則で推測しない。
 
 ## 6. 作成入力契約
 
@@ -135,7 +135,7 @@ BookRAG 資源では、Vector Store 削除に関連する BookRAG table/view の
 ## 12. 検証項目
 
 - SDK 応答形状の alias と nested JSON を正規化できる。
-- Description の取得済み空値と取得不能を区別する。
+- Description の正常な空値と取得不能はいずれも空白セルとし、取得不能の場合だけ warning が表示される。
 - 同名作成、Ready、Failed、Pending、index 空、不一致を試験する。
 - create payload に非対象 mode field と secret がない。
 - 削除成功、409、403、既消滅、BookRAG cleanup 部分失敗を試験する。

@@ -4,9 +4,9 @@
 
 ## 1. システムの責務
 
-teradataevsui は、Teradata Vector Store と BookRAG の作成、検索、統制、運用を提供する FastAPI アプリケーションである。サーバーサイド Jinja2 と HTMX を主な画面配信方式とし、SQLite をコントロールプレーン、Teradata を業務データプレーン、ローカルファイルシステムを文書および中間制品の保存先として使用する。
+teradataevsui は、Teradata Vector Store と BookRAG の作成、検索、統制、運用を提供する FastAPI アプリケーションである。サーバーサイド Jinja2 と HTMX を主な画面配信方式とし、SQLite をコントロールプレーン、Teradata を業務データプレーン、ローカルファイルシステムを文書および中間成果物の保存先として使用する。
 
-本システムが所有するものは、ユーザー、セッション、接続プロファイル、外部サービス設定、ジョブ、制品メタデータ、および画面用セッション状態である。Vector Store と BookRAG テーブルの実体、Unstructured のリモートジョブ、および Teradata 製品の認証基盤は所有しない。
+本システムが所有するものは、ユーザー、セッション、接続プロファイル、外部サービス設定、ジョブ、成果物メタデータ、および画面用セッション状態である。Vector Store と BookRAG テーブルの実体、Unstructured のリモートジョブ、および Teradata 製品の認証基盤は所有しない。
 
 ## 2. 配置構成
 
@@ -34,7 +34,7 @@ FastAPI 単一プロセス
 | アプリケーション構成 | `app/main.py`、`app/core/` | 設定、ミドルウェア、ライフサイクル | 下位全体の組み立て |
 | 配信 | `app/routers/`、`app/templates/`、`app/static/` | HTTP、HTML、JSON、入力検証 | ワークフロー、サービス |
 | ワークフロー | `app/workflows/` | ユースケースの順序、状態遷移、補償 | サービス、インテグレーション |
-| ドメインサービス | `app/services/` | BookRAG、文書処理、ジョブ、制品 | リポジトリ、インテグレーション |
+| ドメインサービス | `app/services/` | BookRAG、文書処理、ジョブ、成果物 | リポジトリ、インテグレーション |
 | インテグレーション | `app/integrations/`、`app/teradata_runtime.py` | 外部 SDK の適合、契約検証 | 外部ライブラリ |
 | 永続化 | `app/repositories/`、`app/db/` | SQLite とマイグレーション | 標準 DB API、暗号化サービス |
 
@@ -53,7 +53,7 @@ FastAPI 単一プロセス
 | コントロールプレーン | SQLite | 永続 | users、profiles、jobs、artifacts |
 | SDK コンテキスト | プロセス全体 | 1 操作または接続切替まで | teradataml context、auth token |
 | 業務データ | Teradata | 外部ライフサイクル | Vector Store、BookRAG tables |
-| 中間・出力ファイル | `uploads/` | 制品期限まで | 原文書、JSON、CSV、manifest |
+| 中間・出力ファイル | `uploads/` | 成果物期限まで | 原文書、JSON、CSV、manifest |
 | PEM 実体化 | `pem_runtime/` | SDK 利用に必要な期間 | 復号済み一時 PEM |
 
 ブラウザーセッション状態は永続ジョブの正本ではない。再起動を越える処理状態は SQLite `jobs` に保存する。Teradata SDK コンテキストはユーザーごとに独立していないため、要求ごとに選択プロファイルを再活性化する。
@@ -114,5 +114,5 @@ bootstrap 後もユーザーが 0 件の場合は起動を継続し、最初の�
 - アプリが `WEB_CONCURRENCY=1` で起動し、2 プロセス目が同じ DB ロックを取得できない。
 - 同時 HTTP 操作とジョブが SDK コンテキストを交差させない。
 - セッションごとの接続、フォーム、チャット状態が他ユーザーへ漏れない。
-- 再起動後に SQLite のユーザー、設定、ジョブ、制品が保持される。
+- 再起動後に SQLite のユーザー、設定、ジョブ、成果物が保持される。
 - 未処理例外に要求 ID があり、シークレットを含まない。

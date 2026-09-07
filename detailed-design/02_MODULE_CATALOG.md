@@ -203,15 +203,15 @@ HTTP / CLI エントリーポイント
 
 | 入口 | 責務 | 設計上の扱い |
 |---|---|---|
-| `uv run uvicorn app.main:create_app --factory` | Web アプリの唯一の通常起動 | 単一プロセスで起動する |
+| `uv run --locked --no-sync python -m uvicorn app.main:app` | Web アプリの標準起動 | 単一プロセスで起動する |
 | `python -m app.db` | migrate、status、backup | SQLite 管理専用 |
 | `app/ops/__main__.py`（`python -m app.ops`） | 保守ジョブの登録・実行 | 破壊操作は明示フラグを必要とする |
-| `scripts/check_direct_dependencies.py` | import と直接依存の整合 | 依存追加時に必須 |
+| `scripts/check_dependencies.py` | import と直接依存の整合 | 依存追加時に必須 |
 | `scripts/check_publication.py` | 公開禁止情報と公開物の検査 | push 前に必須 |
 | `scripts/check_doc_parity.py` | 公開英日文書の構造・対応検査 | 公開文書変更時に必須 |
-| `scripts/smoke_test.py` | 基本 HTTP 動作 | 配布前確認 |
-| `scripts/browser_action_test.py` | 主要画面操作 | UI・ルーター変更時に必須 |
-| `scripts/live_smoke_test.py` | 実 Teradata 接続を使う任意試験 | 明示設定時だけ実行 |
+| `scripts/verify_wheel.py` | wheel 内容、秘密値、個人情報の検査 | 配布前確認 |
+| `tests/test_browser_actions.py`、`tests/test_frontend_parameters.py` | 主要画面操作と frontend parameter | UI・ルーター変更時に必須 |
+| `scripts/check_live_connection.py` | 実 Teradata 接続を使う任意の読み取り試験 | 明示設定時だけ実行 |
 
 ## 14. 変更種別から配置先を決める表
 

@@ -37,7 +37,7 @@ UI は選択済み Vector Store、検索方式、質問を受ける。許可方�
 | POST | `/api/bookrag/answer` | JSON request による answer |
 | GET | `/healthz` | application health |
 
-GET と POST の同機能は入力元だけが異なり、validation と service 処理を共有する。
+GET と POST の同機能は、有効な入力に対して同じ service 処理を共有する。POST body は Pydantic model で制約違反を `422` とし、GET query の `top_k` は 1～20 に丸める。
 
 ## 5. 入力契約
 
@@ -48,7 +48,7 @@ GET と POST の同機能は入力元だけが異なり、validation と service
 | `schema_name` | 256 文字以内、任意 | Teradata schema override |
 | `top_k` | 1～20、既定 5 | 最終候補数 |
 
-空白だけの値を有効としない。schema と資源名は SQL 識別子境界で再検証する。API request body は Pydantic model を正本とする。
+空白だけの必須値を有効とせず `422` とする。schema と資源名は SQL 識別子境界で再検証する。POST の API request body は Pydantic model を正本とする。
 
 ## 6. 認証と runtime
 
@@ -96,16 +96,16 @@ request validation
   → JSON response
 ```
 
-各応答に request ID を持たせる。利用者 supplied ID は安全な文字と 128 文字以内に制限する。
+各応答に request ID を持たせる。BookRAG の正常応答は、利用者 supplied ID を trim して先頭 128 文字まで使用し、未指定時は UUID を生成する。未処理例外の request ID は `SEC-ERROR-004` に従い、安全な文字かつ 128 文字以内の場合だけ利用者指定値を使用する。
 
 ## 10. エラー契約
 
 | Status | 条件 |
 |---:|---|
-| 400 | 必須 query の空値、資源を開けない |
+| 400 | Vector Store を開けない |
 | 401 | session/token なしまたは不正 |
 | 409 | session 未接続、governed document scope なし |
-| 422 | Pydantic 制約、長さ、top_k |
+| 422 | 必須値の空白、入力型または Pydantic 制約、長さ、POST body の top_k 範囲外 |
 | 500 | 検索処理内の予期しない失敗 |
 | 503 | SDK、SQL、接続 runtime が利用不能 |
 

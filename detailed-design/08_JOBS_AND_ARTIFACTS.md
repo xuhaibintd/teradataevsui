@@ -17,7 +17,7 @@ HTTP 要求を越えて存続する文書解析、CSV 生成、Teradata load、V
 | `multi_format.csv.generate` | Multi-Format JSON→CSV |
 | `multi_format.csv.load` | Multi-Format table load |
 | `vector_store.create` | Vector Store 作成と Ready 確認 |
-| `artifact.cleanup` | 期限切れ制品の preview または削除 |
+| `artifact.cleanup` | 期限切れ成果物の preview または削除 |
 
 未知 kind を登録・実行しない。kind 追加時は handler、label、payload schema、権限、result rendering、test を追加する。
 
@@ -79,7 +79,7 @@ recovery は外部副作用を巻き戻さない。CSV load または create の
 
 文書ごとの成功・失敗を利用者へ見せる必要がある場合、handler は `JobExecutionError` に安全な result を付ける。job status は failed でも result summary を保持し、画面は成功ファイル、失敗ファイル、run error を表示できる。
 
-## 9. 制品台帳
+## 9. 成果物台帳
 
 `ArtifactLifecycle` は `uploads/` を root とし、その配下の file だけを登録・削除する。
 
@@ -89,7 +89,7 @@ recovery は外部副作用を巻き戻さない。CSV load または create の
 - `ART-002`：台帳にない file を期限 cleanup で削除しない。
 - `ART-003`：削除後に `deleted_at` を記録する。
 - `ART-004`：retention は最小 1 日とする。
-- `ART-005`：hash が必要な監査制品だけ内容 SHA-256 を計算する。
+- `ART-005`：hash が必要な監査成果物だけ内容 SHA-256 を計算する。
 
 ## 10. Cleanup
 

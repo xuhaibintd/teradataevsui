@@ -25,6 +25,8 @@
 - `UNS-SPEC-004`：永続 Workflow の作成・更新・`workflow_id` 指定実行は現在の処理経路に含めない。
 - `UNS-SPEC-005`：Unstructured の外部仕様と固定 SDK に差異がある場合、固定 SDK の実型と公式 REST 契約を確認し、インテグレーション境界と契約試験を同じ変更で更新する。
 
+公式仕様（2026-09-07 確認）では、一つのローカルファイル処理 job に最大 10 ファイル、各 50 MB まで送信できる。submit 間隔は 1 秒以上、同時実行は最大 5 job である。本システムは後述のとおり、これより厳格なアプリケーション制約を採用する。
+
 公式参照先：
 
 - Workflow overview：<https://docs.unstructured.io/api-reference/workflow/overview>
@@ -156,9 +158,9 @@ Multi-Format の Chunker は `chunk_by_character`、`chunk_by_title`、`chunk_by
 
 ### 7.1 Submit
 
-- `UNS-JOB-001`：現在は一要求一ファイルで送信する。
-- `UNS-JOB-002`：10,000,000 bytes を超えるファイルは送信前に拒否する。
-- `UNS-JOB-003`：連続 submit は既定 1.35 秒以上空ける。
+- `UNS-JOB-001`：本システムは一要求一ファイルで送信する。
+- `UNS-JOB-002`：本システムの安全上限として、10,000,000 bytes を超えるファイルは送信前に拒否する。
+- `UNS-JOB-003`：本システムでは連続 submit を既定 1.35 秒以上空ける。
 - `UNS-JOB-004`：HTTP 429 は最大 6 回まで、`Retry-After` または response の `retry_after` を尊重して再試行する。
 - `UNS-JOB-005`：submit は `unstructured-api-key` header、`request_data`、`input_files` を使用し、応答に `id` がなければ失敗とする。
 
