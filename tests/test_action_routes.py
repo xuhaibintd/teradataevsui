@@ -165,6 +165,44 @@ class ActionRouteTests(unittest.TestCase):
         self.assertEqual(len(jobs), 2)
         self.assertTrue(all(job["payload"]["vector_store_name"] == "" for job in jobs))
 
+    def test_csv_generation_rejects_loaded_target_without_queuing(self):
+        self.login("operator")
+        cases = (
+            (
+                "/ui/create/generate-csv",
+                "app.routers.web.ensure_bookrag_csv_generation_target_available",
+                {
+                    "bookrag_parse_run_id": "parse-run",
+                    "bookrag_csv_vector_store_name": "existing_store",
+                    "bookrag_csv_target_database": "target_db",
+                },
+            ),
+            (
+                "/ui/create/multi-format/generate-csv",
+                "app.routers.web.ensure_multi_format_csv_generation_target_available",
+                {
+                    "multi_format_parse_run_id": "parse-run",
+                    "multi_format_csv_vector_store_name": "existing_store",
+                    "multi_format_csv_target_database": "target_db",
+                },
+            ),
+        )
+        for path, check, data in cases:
+            with self.subTest(path=path):
+                job_count = len(self.store.jobs.list_recent())
+                with mock.patch(
+                    check,
+                    side_effect=RuntimeError(
+                        "Target Vector Store 'existing_store' already has loaded tables in database "
+                        "'target_db'. Use a different Target Vector Store Name; CSV generation was not started."
+                    ),
+                ):
+                    response = self.client.post(path, data=data)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("already has loaded tables", response.text)
+                self.assertEqual(len(self.store.jobs.list_recent()), job_count)
+
     def test_multipart_uploads_close_after_success_failure_and_ignored_fields(self):
         sid = self.login("operator")
         self.app.state.user_sessions[sid]["evs_state"]["connected"] = True
@@ -246,7 +284,12 @@ class ActionRouteTests(unittest.TestCase):
             for path in READ_ACTIONS:
                 with self.subTest(path=path):
                     self.assertEqual(self.client.post(path, data={"message": "fixture question"}).status_code, 200)
-        for path in ("/", "/ui/admin/document-metadata", "/ui/admin/document-relations"):
+        for path in (
+            "/",
+            "/ui/admin/document-governance",
+            "/ui/admin/document-metadata",
+            "/ui/admin/document-relations",
+        ):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
         self.sql.assert_not_called()
@@ -402,10 +445,63 @@ class ActionRouteTests(unittest.TestCase):
 
     def test_selected_governance_read_while_disconnected_never_queries_sql(self):
         self.login("reader")
-        for path in ("/ui/admin/document-metadata", "/ui/admin/document-relations"):
+        for path in (
+            "/ui/admin/document-governance",
+            "/ui/admin/document-metadata",
+            "/ui/admin/document-relations",
+        ):
             response = self.client.get(path, params={"vector_store_name": "safe_fixture"})
             self.assertEqual(response.status_code, 200)
             self.assertIn("Not Connected", response.text)
+        self.sql.assert_not_called()
+
+    def test_governance_load_uses_the_same_vector_store_for_both_sections(self):
+        sid = self.login("reader")
+        self.app.state.user_sessions[sid]["evs_state"]["connected"] = True
+        self.app.state.ensure_session_runtime = lambda *_args, **_kwargs: None
+        with mock.patch("app.routers.web.fetch_document_metadata", return_value=[]) as metadata, mock.patch(
+            "app.routers.web.fetch_bookrag_documents", return_value=[]
+        ) as documents, mock.patch(
+            "app.routers.web.document_relation_table_exists", return_value=False
+        ):
+            response = self.client.get(
+                "/ui/admin/document-governance",
+                params={"vector_store_name": "shared_fixture"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(metadata.call_args.kwargs["vector_store_name"], "shared_fixture")
+        self.assertEqual(documents.call_args.kwargs["vector_store_name"], "shared_fixture")
+        self.assertEqual(
+            self.app.state.user_sessions[sid]["evs_state"]["bookrag_governance_vs_name"],
+            "shared_fixture",
+        )
+        self.assertEqual(response.text.count('<select name="vector_store_name" required>'), 1)
+        self.assertEqual(response.text.count(">Refresh Vector Stores</button>"), 1)
+
+    def test_governance_refresh_failure_keeps_one_picker_and_reports_at_the_top(self):
+        self.login("reader")
+        failure = {
+            "kind": "error",
+            "title": "Vector Store Refresh Failed",
+            "detail": "Fixture list failure. Try again.",
+        }
+        with mock.patch(
+            "app.routers.web._refresh_document_relation_vector_store_options",
+            return_value=failure,
+        ):
+            response = self.client.get(
+                "/ui/admin/document-governance",
+                params={"refresh": "true"},
+                headers={"HX-Request": "true"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="top-op-stack-shell"', response.text)
+        self.assertIn('hx-swap-oob="outerHTML"', response.text)
+        self.assertIn("Vector Store Refresh Failed", response.text)
+        self.assertEqual(response.text.count('<select name="vector_store_name" required>'), 1)
+        self.assertEqual(response.text.count(">Refresh Vector Stores</button>"), 1)
         self.sql.assert_not_called()
 
     def test_cross_site_and_malformed_origins_reject_writes_without_server_errors(self):

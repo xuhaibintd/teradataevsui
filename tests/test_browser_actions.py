@@ -61,7 +61,7 @@ class BrowserActionTests(unittest.TestCase):
         self.page.locator('[name="password"]').fill("browser-password")
         self.page.get_by_role("button", name="Login", exact=True).click()
         self.expect(self.page.locator(".menu-layout")).to_be_visible()
-        self.page.wait_for_function("() => Boolean(window.htmx && window.EVSUIApp)")
+        self.page.wait_for_load_state("networkidle")
 
     def connect(self):
         self.page.get_by_role("button", name="Connect", exact=True).click()
@@ -73,29 +73,43 @@ class BrowserActionTests(unittest.TestCase):
         self.page.get_by_role("button", name="BookRAG Governance", exact=True).click()
 
     def load_governance(self, panel_id):
-        panel = self.page.locator(panel_id)
-        with self.page.expect_response(lambda response: "/ui/admin/document-" in response.url):
-            panel.get_by_role("button", name="Refresh Vector Stores", exact=True).click()
-        self.expect(panel.locator('select[name="vector_store_name"] option[value="e2e_store"]')).to_have_count(1)
-        panel.locator('select[name="vector_store_name"]').select_option("e2e_store")
-        with self.page.expect_response(lambda response: "/ui/admin/document-" in response.url):
-            panel.get_by_role("button", name="Load", exact=True).click()
-        return panel
+        governance = self.page.locator("#document-governance-admin")
+        with self.page.expect_response(lambda response: "/ui/admin/document-governance" in response.url):
+            governance.get_by_role("button", name="Refresh Vector Stores", exact=True).click()
+        selector = governance.locator('select[name="vector_store_name"]')
+        self.expect(selector.locator('option[value="e2e_store"]')).to_have_count(1)
+        selector.select_option("e2e_store")
+        with self.page.expect_response(lambda response: "/ui/admin/document-governance" in response.url):
+            governance.get_by_role("button", name="Load", exact=True).click()
+        return self.page.locator(panel_id)
 
-    def test_empty_governance_select_refreshes_both_lists_without_native_validation(self):
+    def test_governance_has_one_refresh_and_one_shared_vector_store_picker(self):
         self.governance()
-        for panel_id in ("#document-metadata-admin", "#document-relation-admin"):
-            with self.subTest(panel=panel_id):
-                panel = self.page.locator(panel_id)
-                self.assertEqual(panel.locator('select[name="vector_store_name"]').input_value(), "")
-                before = self.fixture.calls.count("list")
-                with self.page.expect_response(lambda response: "refresh=true" in response.url):
-                    panel.get_by_role("button", name="Refresh Vector Stores").click()
-                self.expect(panel.locator('option[value="e2e_store"]')).to_have_count(1)
-                self.assertGreater(self.fixture.calls.count("list"), before)
-                # Loading is still required to have a selection; only list refresh bypasses it.
-                self.assertEqual(panel.locator('select[name="vector_store_name"]').input_value(), "")
+        governance = self.page.locator("#document-governance-admin")
+        selector = governance.locator('select[name="vector_store_name"]')
+        self.assertEqual(selector.input_value(), "")
+        self.expect(governance.get_by_role("button", name="Refresh Vector Stores", exact=True)).to_have_count(1)
+        self.expect(governance.get_by_role("button", name="Load", exact=True)).to_have_count(1)
+        self.expect(self.page.locator('#document-metadata-admin select[name="vector_store_name"]')).to_have_count(0)
+        self.expect(self.page.locator('#document-relation-admin select[name="vector_store_name"]')).to_have_count(0)
+        before = self.fixture.calls.count("list")
+        with self.page.expect_response(lambda response: "document-governance?refresh=true" in response.url):
+            governance.get_by_role("button", name="Refresh Vector Stores", exact=True).click()
+        self.expect(selector.locator('option[value="e2e_store"]')).to_have_count(1)
+        self.assertGreater(self.fixture.calls.count("list"), before)
+        # Refresh only updates the candidates; loading still requires an explicit selection.
+        self.assertEqual(selector.input_value(), "")
         self.page.locator("#bookrag-admin-panel").screenshot(path=str(self.output / "governance-refresh.png"))
+        for width in (1100, 900):
+            with self.subTest(viewport_width=width):
+                self.page.set_viewport_size({"width": width, "height": 1000})
+                self.assertLessEqual(
+                    self.page.locator("html").evaluate("element => element.scrollWidth"),
+                    width,
+                )
+                self.page.locator("#bookrag-admin-panel").screenshot(
+                    path=str(self.output / f"governance-refresh-{width}.png")
+                )
 
     def test_login_failure_logout_and_connection_navigation_lifecycle(self):
         self.page.goto(self.fixture.base_url + "/login")
@@ -125,7 +139,7 @@ class BrowserActionTests(unittest.TestCase):
         form.locator('[name="publication_date"]').fill("2026-08-01")
         form.locator('[name="metadata_status"]').select_option("confirmed")
         form.get_by_role("button", name="Save", exact=True).click()
-        self.expect(panel.get_by_text("Document Metadata Saved", exact=True)).to_be_visible()
+        self.expect(self.page.locator("#top-op-stack-shell")).to_contain_text("Document Metadata Saved")
         self.assertEqual(self.fixture.documents[0]["publication_date"], "2026-08-01")
         with self.page.expect_download() as downloaded:
             panel.get_by_role("link", name="Export CSV", exact=True).click()
@@ -133,10 +147,10 @@ class BrowserActionTests(unittest.TestCase):
         panel.locator('[name="metadata_csv"]').set_input_files({"name": "metadata.csv", "mimeType": "text/csv",
             "buffer": b"doc_id,publication_date,metadata_status\ndoc-1,2026-08-02,confirmed\n"})
         panel.get_by_role("button", name="Import CSV", exact=True).click()
-        self.expect(panel.get_by_text("Metadata CSV Imported", exact=True)).to_be_visible()
+        self.expect(self.page.locator("#top-op-stack-shell")).to_contain_text("Metadata CSV Imported")
         self.assertEqual(self.fixture.documents[0]["publication_date"], "2026-08-02")
         panel.get_by_role("button", name="Auto-fill Metadata", exact=True).click()
-        self.expect(panel.get_by_text("Metadata Auto-fill Complete", exact=True)).to_be_visible()
+        self.expect(self.page.locator("#top-op-stack-shell")).to_contain_text("Metadata Auto-fill Complete")
 
     def test_json_inspector_refresh_discovers_new_files_and_opens_real_payload(self):
         self.governance()
@@ -178,14 +192,14 @@ class BrowserActionTests(unittest.TestCase):
         self.governance()
         panel = self.load_governance("#document-relation-admin")
         panel.get_by_role("button", name="Initialize bdrel", exact=True).click()
-        self.expect(panel.get_by_text("bdrel Ready", exact=True)).to_be_visible()
+        self.expect(self.page.locator("#top-op-stack-shell")).to_contain_text("bdrel Ready")
         form = panel.locator(".document-relation-admin-form")
         form.locator('[name="from_doc_id"]').select_option("doc-1")
         form.locator('[name="to_doc_id"]').select_option("doc-2")
         form.locator('[name="relation_type"]').select_option("related_to")
         form.locator('[name="relation_description"]').fill("Browser-created relationship")
         form.get_by_role("button", name="Save", exact=True).click()
-        self.expect(panel.get_by_text("Relationship Saved", exact=True)).to_be_visible()
+        self.expect(self.page.locator("#top-op-stack-shell")).to_contain_text("Relationship Saved")
         panel.locator("summary").click()
         edit = panel.locator("details form")
         edit.locator('[name="relation_description"]').fill("Browser-updated relationship")
@@ -223,6 +237,7 @@ class BrowserActionTests(unittest.TestCase):
         self.assertEqual(len(self.fixture.store.list_connection_profiles()), 1)
 
     def test_management_health_list_select_and_destroy_cancel_confirm(self):
+        self.fixture.destroy_delay_seconds = 0.4
         self.login()
         self.connect()
         self.assertLessEqual(
@@ -257,6 +272,9 @@ class BrowserActionTests(unittest.TestCase):
         self.assertNotIn("destroy", self.fixture.calls)
         self.page.locator("[data-destroy-btn]").click()
         dialog.get_by_role("button", name="Delete", exact=True).click()
+        self.expect(self.page.locator("#top-op-stack-shell .top-op-line.info")).to_have_text(
+            "Deleting 'e2e_store'..."
+        )
         self.expect(self.page.locator('tr[data-vs-name="e2e_store"]')).to_have_count(0)
         self.expect(self.page.locator("#top-op-stack-shell .top-op-line.ok").first).to_contain_text("VectorStore.destroy() completed")
         self.assertEqual(self.fixture.stores, [])
@@ -344,6 +362,47 @@ class BrowserActionTests(unittest.TestCase):
             self.assertEqual(self.fixture.calls.count("ask"), 1, "API submit must not also run native HTMX submission")
         self.page.get_by_role("button", name="Clear", exact=True).click()
         self.expect(self.page.locator("#chat-messages")).not_to_contain_text("Fixture retrieval evidence")
+
+    def test_first_install_admin_setup_success_and_failure(self):
+        with self.fixture.store._connect() as connection:
+            connection.execute("DELETE FROM users")
+
+        self.page.goto(self.fixture.base_url + "/")
+        self.expect(self.page.get_by_role("heading", name="Create administrator", exact=True)).to_be_visible()
+        self.assertTrue(self.page.url.endswith("/setup"))
+        for width in (1600, 900, 520):
+            with self.subTest(viewport_width=width):
+                self.page.set_viewport_size({"width": width, "height": 900})
+                self.assertLessEqual(
+                    self.page.locator("html").evaluate("element => element.scrollWidth"),
+                    width,
+                )
+                self.page.screenshot(path=str(self.output / f"initial-setup-{width}.png"))
+
+        form = self.page.locator('form[action="/setup"]')
+        form.locator('[name="username"]').fill("browser_admin")
+        form.locator('[name="password"]').fill("browser-admin-password")
+        form.locator('[name="confirm_password"]').fill("different-password")
+        form.get_by_role("button", name="Create administrator", exact=True).click()
+        self.expect(self.page.locator(".status.err")).to_have_text("Passwords do not match.")
+        self.assertEqual(self.fixture.store.count_users(), 0)
+        self.expect(form.locator('[name="password"]')).to_have_value("")
+        self.expect(form.locator('[name="confirm_password"]')).to_have_value("")
+
+        form.locator('[name="password"]').fill("browser-admin-password")
+        form.locator('[name="confirm_password"]').fill("browser-admin-password")
+        form.get_by_role("button", name="Create administrator", exact=True).click()
+        self.expect(self.page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+        self.expect(self.page.locator(".status.ok")).to_contain_text("Administrator created")
+        self.assertEqual(self.fixture.store.count_users(), 1)
+
+        self.page.goto(self.fixture.base_url + "/setup")
+        self.expect(self.page.get_by_role("heading", name="Sign in", exact=True)).to_be_visible()
+        self.page.locator('[name="username"]').fill("browser_admin")
+        self.page.locator('[name="password"]').fill("browser-admin-password")
+        self.page.get_by_role("button", name="Login", exact=True).click()
+        self.expect(self.page.locator(".menu-layout")).to_be_visible()
+        self.expect(self.page.get_by_role("link", name="System Configuration", exact=True)).to_be_visible()
 
     def test_unstructured_secrets_save_keep_clear_and_user_management(self):
         self.login()

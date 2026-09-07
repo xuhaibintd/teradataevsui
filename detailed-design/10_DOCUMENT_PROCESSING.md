@@ -66,19 +66,31 @@ Upload
 
 Parse は保存文書ごとに Unstructured workflow を実行する。入力は処理設定、対象文書、共有 Unstructured URL/key である。複数文書は設定上限の範囲で並行処理できるが、API submission 間隔を守る。
 
+- `DOC-UNSTRUCTURED-001`：on-demand Jobs API の一ファイル上限 10 MB（10,000,000 bytes）を送信前に検証する。upload 保存上限とは別の外部 API 契約であり、超過時は対象ファイル名を含む file result を失敗として残す。
+
 manifest は最低限、artifact type、schema version、parse_run_id、作成時刻、Vector Store 名、全体 status、文書配列を持つ。各文書には doc_id、filename、source path、raw JSON path、checksum、element count、status、error、workflow/job metadata を持たせる。
 
 全対象の raw JSON が有効な場合だけ run を `ready` とする。部分失敗は file result を残し、後段 CSV へ進ませない。
 
 ## 7. Unstructured Workflow
 
+API 設定、モデル管理、node 形式、Jobs API、poll/download、失敗処理の完全な契約は `16_UNSTRUCTURED_IO_API.md` に従う。本節は文書処理から必要な DAG 条件を示す。
+
 partition node は必ず一つで、subtype は `vlm` または `unstructured_api` とする。
 
-- `vlm` は strategy `auto` または `vlm`
+- `DOC-UNSTRUCTURED-002`：次の node 形式、model 設定、DAG 順序を network I/O 前に検証する。
+
+- `vlm` は `is_dynamic=true` を Auto、`is_dynamic=false` を explicit VLM とし、旧 `strategy` は送信しない
 - `unstructured_api` は `fast`、`hi_res`、`ocr_only`
-- VLM partition が既に行う image/table/OCR enrichment を重複 prompter として追加しない
+- explicit VLM へ別 image/table/OCR prompter を追加しない。NER は追加できる
 - prompter settings は object とする
+- image/table description、generative OCR、非 two-pass table-to-HTML、NER は `provider_type` と `model` を必須とする
+- `twopass_image_description` と `twopass_table2html` は provider/model を送信しない
+- image/table/OCR enrichment は chunker 前、NER は chunker 後に置く。BookRAG は chunker を持たないため NER を enrichment 列の最後に置く
+- generative OCR を High Res で使う場合、`extract_image_block_types` に対象 text element type を含める
 - provider、model、OCR language、chunk、table/image/NER option を型と範囲へ正規化する
+- VLM と全 model-backed enrichment のモデル候補は `06_EXTERNAL_INTEGRATIONS.md` の版管理モデルカタログから取得し、UI と workflow builder にモデル一覧を重複定義しない
+- model ID が OpenAI と Azure OpenAI の両方に存在する場合は、利用者が明示した provider を維持する
 
 workflow definition は network I/O 前にローカル検証する。
 
@@ -90,11 +102,17 @@ CSV manifest は source_parse_run_id、csv_run_id、target database、table name
 
 CSV は document ごとの stage directory に分け、同名ファイル衝突を防ぐ。すべて成功した場合だけ `ready` とする。
 
+文書ごとの変換完了時に durable job heartbeat を更新し、並列実行中も完了文書数に比例した 10～90 の進捗を保存する。成功・失敗のどちらの file result も完了数へ含める。
+
+- `DOC-CSV-001`：CSV run 作成前に、両方の Multi-Format mode を横断して、同じ target database と大文字小文字を区別しない Vector Store 名を持つ `status=ready` かつ `load_status=ready` のローカル manifest を検査する。該当 run がある場合は CSV を生成せず、別名を要求する。未 load、loading、failed の run、および別 database または別名はこの検査で占有扱いにしない。Router と変換 service の両方で検査し、登録と実行の間の状態変化にも対応する。
+
 ## 9. BookRAG CSV run
 
 BookRAG では Core、Audit、Graph の選択済み table CSV を生成する。`documents`、`blocks`、`nodes`、`document_relations` は必須 Core、`raw` は監査用、entity 系は Graph とする。契約 version と table mapping を manifest に固定する。
 
 文書内でだけ一意な ID は必ず doc_id と組にする。document relation は全文書変換完了後に run 単位で一つ生成し、正当な関係がない場合は header-only とする。
+
+BookRAG も各文書の Core、Audit、Graph CSV 生成が完了するたびに同じ 10～90 の進捗契約を使用する。
 
 ## 10. Load run
 

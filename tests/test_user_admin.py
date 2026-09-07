@@ -115,7 +115,8 @@ class UserAdminRouteTests(unittest.TestCase):
         self.assertIn("static/js/app.js", page.text)
         self.assertNotIn('hx-get="/ui/admin/document-metadata?refresh=true"', page.text)
         self.assertNotIn('hx-get="/ui/admin/document-relations?refresh=true"', page.text)
-        self.assertIn('name="refresh" value="true"', page.text)
+        self.assertIn('hx-get="/ui/admin/document-governance?refresh=true"', page.text)
+        self.assertEqual(page.text.count(">Refresh Vector Stores</button>"), 1)
 
     def test_login_page_does_not_load_application_scripts(self) -> None:
         page = self.client.get("/login")
@@ -123,6 +124,67 @@ class UserAdminRouteTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertNotIn("unpkg.com/htmx", page.text)
         self.assertNotIn("static/js/app.js", page.text)
+
+    def test_empty_installation_requires_one_time_admin_setup(self) -> None:
+        with self.store._connect() as connection:
+            connection.execute("DELETE FROM users")
+
+        login = self.client.get("/login", follow_redirects=False)
+        self.assertEqual(login.status_code, 303)
+        self.assertEqual(login.headers["location"], "/setup")
+
+        setup = self.client.get("/setup")
+        self.assertEqual(setup.status_code, 200)
+        self.assertIn("Create administrator", setup.text)
+        self.assertIn('name="confirm_password"', setup.text)
+        self.assertNotIn("unpkg.com/htmx", setup.text)
+        self.assertNotIn("static/js/app.js", setup.text)
+
+        mismatch = self.client.post(
+            "/setup",
+            data={
+                "username": "first_admin",
+                "password": "first-admin-password",
+                "confirm_password": "different-password",
+            },
+        )
+        self.assertEqual(mismatch.status_code, 400)
+        self.assertIn("Passwords do not match.", mismatch.text)
+        self.assertNotIn("first-admin-password", mismatch.text)
+        self.assertEqual(self.store.count_users(), 0)
+
+        too_short = self.client.post(
+            "/setup",
+            data={
+                "username": "first_admin",
+                "password": "short",
+                "confirm_password": "short",
+            },
+        )
+        self.assertEqual(too_short.status_code, 400)
+        self.assertIn("at least 8 characters", too_short.text)
+        self.assertNotIn('value="short"', too_short.text)
+        self.assertEqual(self.store.count_users(), 0)
+
+        created = self.client.post(
+            "/setup",
+            data={
+                "username": "first_admin",
+                "password": "first-admin-password",
+                "confirm_password": "first-admin-password",
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(created.status_code, 303)
+        self.assertEqual(created.headers["location"], "/login?setup=complete")
+        self.assertEqual(self.store.count_users(), 1)
+
+        login_after_setup = self.client.get(created.headers["location"])
+        self.assertIn("Administrator created. Sign in with the new account.", login_after_setup.text)
+        closed = self.client.get("/setup", follow_redirects=False)
+        self.assertEqual(closed.status_code, 303)
+        self.assertEqual(closed.headers["location"], "/login")
+        self._login("first_admin", "first-admin-password")
 
     def test_viewer_cannot_open_user_admin(self) -> None:
         self._login("reader", "reader-password")

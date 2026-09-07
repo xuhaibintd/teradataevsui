@@ -12,6 +12,7 @@ import httpx
 
 UNSTRUCTURED_JOB_SUBMIT_MAX_ATTEMPTS = 6
 UNSTRUCTURED_JOB_SUBMIT_RETRY_MARGIN_SECONDS = 0.35
+UNSTRUCTURED_ON_DEMAND_MAX_FILE_BYTES = 10_000_000
 
 
 def _job_submit_retry_after_seconds(response: httpx.Response, attempt: int) -> float:
@@ -110,6 +111,12 @@ def create_unstructured_on_demand_job(
     api_key: str,
     api_url: str,
 ) -> tuple[str, dict[str, Any]]:
+    source_size = src.stat().st_size
+    if source_size > UNSTRUCTURED_ON_DEMAND_MAX_FILE_BYTES:
+        raise RuntimeError(
+            "Unstructured on-demand jobs accept files up to 10 MB; "
+            f"'{src.name}' is {source_size} bytes."
+        )
     content_type = mimetypes.guess_type(src.name)[0] or "application/octet-stream"
     endpoint = f"{api_url.rstrip('/')}" + "/jobs/"
     request_data = json.dumps({"job_nodes": request_parameters.get("workflow_nodes", [])}, ensure_ascii=False)

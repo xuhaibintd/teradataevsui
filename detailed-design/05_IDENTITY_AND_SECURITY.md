@@ -15,10 +15,25 @@
 | `app/services/credential_vault.py` | Fernet 暗号化、PEM 実体化 |
 | `app/core/security.py` | CSRF 相当の同一生成元検証、ヘッダー、秘匿化 |
 | `app/core/errors.py` | 要求 ID と安全な共通エラー |
-| `app/routers/auth.py` | login、logout |
+| `app/routers/auth.py` | 初回管理者設定、login、logout |
 | `app/routers/system_admin.py` | 管理者操作 |
 
 ## 2. 認証フロー
+
+### 2.1 初回管理者設定
+
+起動時の環境変数・旧設定 bootstrap 後も `users` が 0 件の場合、`GET /login` は `GET /setup` へ誘導する。初回設定は username、password、password confirmation を受け取り、enabled `admin` を一件だけ作成して login へ戻す。
+
+- `AUTH-INIT-001`：`/setup` はユーザー 0 件の場合だけ利用でき、作成後の GET/POST は login へ redirect する。
+- `AUTH-INIT-002`：username は通常ユーザーと同じ文字規則、password は 8 文字以上、confirmation は完全一致を必須とする。
+- `AUTH-INIT-003`：0 件確認と insert は `BEGIN IMMEDIATE` transaction 内で行い、競合した二件目を拒否する。
+- `AUTH-INIT-004`：password と confirmation を HTML、監査、ログ、redirect URL へ残さず、再表示しない。
+- `AUTH-INIT-005`：作成した password は通常ユーザーと同じ Argon2 hash だけを保存し、`user.initial_admin` を監査する。
+- `AUTH-INIT-006`：`EVSUI_BOOTSTRAP_ADMIN` / `EVSUI_BOOTSTRAP_PASSWORD` は無人デプロイ用として維持し、それで管理者が作成済みなら初回設定を表示しない。
+
+空 DB を外部公開したまま放置すると最初の訪問者が管理者を取得できるため、初回設定は管理ネットワークまたはローカル接続で完了してから公開する。
+
+### 2.2 通常ログイン
 
 ```text
 username/password

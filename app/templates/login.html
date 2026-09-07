@@ -7,6 +7,9 @@
       <h2>Sign in</h2>
       <p class="muted">Use a Teradata Vector Store account stored in the local authentication database.</p>
     </div>
+    {% if success %}
+    <p class="status ok">{{ success }}</p>
+    {% endif %}
     {% if error %}
     <p class="status err">{{ error }}</p>
     {% endif %}

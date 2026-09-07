@@ -2,6 +2,8 @@
 
 > **Language:** English | [日本語](operations_ja.md)
 
+For a fresh Windows, Linux, or Docker Compose deployment, start with the [First Installation Guide](installation.md). This document covers ongoing operation and recovery after installation.
+
 ## Local development
 
 teradataevsui uses one standard Python process instead of project-specific lifecycle
@@ -87,4 +89,4 @@ Only tracked, expired files below `uploads/` are eligible. Existing untracked fi
 
 `compose.yaml` starts one application service. Its HTTP server and background job
 runner share the same SQLite repository, credential vault, artifact lifecycle, and
-Teradata runtime lock.
+Teradata runtime lock. The Compose defaults leave both bootstrap variables empty so a fresh deployment opens the one-time browser setup. Set both variables explicitly only for unattended initialization.

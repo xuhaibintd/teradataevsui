@@ -72,6 +72,76 @@ def _infer_provider_from_model_name(raw_model: str) -> str:
     return ""
 
 
+def _model_provider_conflicts(explicit_provider: str, inferred_provider: str) -> bool:
+    explicit = str(explicit_provider or "").strip().lower()
+    inferred = str(inferred_provider or "").strip().lower()
+    if not explicit or not inferred:
+        return False
+    if inferred == "openai" and explicit in {"openai", "azure_openai"}:
+        return False
+    return explicit != inferred
+
+
+_TWOPASS_PROMPTER_SUBTYPES = {"twopass_image_description", "twopass_table2html"}
+_PROMPTER_SUBTYPE_PROVIDER = {
+    "openai_image_description": "openai",
+    "anthropic_image_description": "anthropic",
+    "bedrock_image_description": "bedrock",
+    "vertexai_image_description": "vertexai",
+    "openai_table_description": "openai",
+    "anthropic_table_description": "anthropic",
+    "bedrock_table_description": "bedrock",
+    "vertexai_table_description": "vertexai",
+    "openai_table2html": "openai",
+    "anthropic_table2html": "anthropic",
+    "openai_ocr": "openai",
+    "anthropic_ocr": "anthropic",
+    "bedrock_ocr": "bedrock",
+    "openai_ner": "openai",
+    "anthropic_ner": "anthropic",
+}
+_DEFAULT_PROMPTER_MODELS = {
+    "openai": "gpt-5-mini",
+    "azure_openai": "gpt-5-mini",
+    "anthropic": "claude-sonnet-4-6",
+    "bedrock": "us.amazon.nova-lite-v1:0",
+    "vertexai": "gemini-2.5-flash",
+}
+_GENERATIVE_OCR_TEXT_TYPES = ("Text", "NarrativeText", "Title", "ListItem", "UncategorizedText")
+
+
+def _resolve_prompter_settings(*, subtype: str, provider_type: str, model: str) -> dict[str, Any]:
+    subtype = str(subtype or "").strip()
+    if subtype in _TWOPASS_PROMPTER_SUBTYPES:
+        return {}
+
+    expected_provider = _PROMPTER_SUBTYPE_PROVIDER.get(subtype, "")
+    provider_type = str(provider_type or expected_provider).strip().lower()
+    if expected_provider and provider_type not in {expected_provider, "azure_openai" if expected_provider == "openai" else expected_provider}:
+        raise ValueError(
+            f"Unstructured subtype '{subtype}' does not match provider_type '{provider_type}'."
+        )
+
+    model = str(model or "").strip()
+    inferred_provider = _infer_provider_from_model_name(model)
+    if inferred_provider and _model_provider_conflicts(provider_type, inferred_provider):
+        raise ValueError(
+            f"Unstructured model '{model}' does not match provider_type '{provider_type}' for subtype '{subtype}'."
+        )
+    if not model:
+        model = _DEFAULT_PROMPTER_MODELS.get(provider_type, "")
+    if not provider_type or not model:
+        raise ValueError(f"Unstructured subtype '{subtype}' requires provider_type and model.")
+    return {"provider_type": provider_type, "model": model}
+
+
+def _partition_route_label(partition_node: dict[str, Any]) -> str:
+    settings = partition_node.get("settings") if isinstance(partition_node.get("settings"), dict) else {}
+    if partition_node.get("subtype") == "vlm":
+        return "auto" if settings.get("is_dynamic") is True else "vlm"
+    return str(settings.get("strategy") or "unknown")
+
+
 def _normalize_bookrag_workflow_name(raw_name: str | None) -> str:
     name = str(raw_name or "").strip()
     if not name:
@@ -181,6 +251,8 @@ def _resolve_multi_format_accuracy_options(
             extract_image_block_types.append("Table")
         if enable_image_description:
             extract_image_block_types.append("Image")
+        if enable_generative_ocr:
+            extract_image_block_types.extend(_GENERATIVE_OCR_TEXT_TYPES)
     else:
         extract_image_block_types = _parse_csv_values(raw_extract_types)
     normalized_extract_types: list[str] = []
@@ -217,11 +289,13 @@ def _resolve_multi_format_accuracy_options(
             or os.getenv(f"MULTI_FORMAT_{prefix.upper()}_MODEL", "")
             or ""
         ).strip()
-        if enabled and subtype != "twopass_table2html" and (provider_type or model):
-            warnings.append(
-                f"multi format {prefix} provider/model are ignored for on-demand workflow templates; subtype '{subtype}' is sent to Unstructured without extra settings."
-            )
-        return subtype, {}
+        if not enabled:
+            return subtype, {}
+        return subtype, _resolve_prompter_settings(
+            subtype=subtype,
+            provider_type=provider_type or default_provider,
+            model=model or default_model,
+        )
 
     enrichment_options = {
         "enable_generative_ocr": enable_generative_ocr,
@@ -293,7 +367,7 @@ def _build_multi_format_workflow_partition_node(
             warnings.append(
                 f"multi format VLM provider inferred as '{vlm_provider}' from model '{vlm_model}'."
             )
-        elif vlm_provider.lower() != inferred_vlm_provider:
+        elif _model_provider_conflicts(vlm_provider, inferred_vlm_provider):
             warnings.append(
                 f"multi format VLM provider '{vlm_provider}' does not match model '{vlm_model}'; overriding provider to '{inferred_vlm_provider}'."
             )
@@ -301,7 +375,6 @@ def _build_multi_format_workflow_partition_node(
 
     if requested_strategy == "auto":
         settings: dict[str, Any] = {
-            "strategy": "auto",
             "output_format": "application/json",
             "format_html": False,
             "unique_element_ids": unique_element_ids,
@@ -323,7 +396,6 @@ def _build_multi_format_workflow_partition_node(
 
     if requested_strategy == "vlm":
         settings = {
-            "strategy": "vlm",
             "output_format": "application/json",
             "format_html": False,
             "unique_element_ids": unique_element_ids,
@@ -437,7 +509,7 @@ def build_bookrag_workflow_partition_node(
             warnings.append(
                 f"bookrag VLM provider inferred as '{vlm_provider}' from model '{vlm_model}'."
             )
-        elif vlm_provider.lower() != inferred_vlm_provider:
+        elif _model_provider_conflicts(vlm_provider, inferred_vlm_provider):
             warnings.append(
                 f"bookrag VLM provider '{vlm_provider}' does not match model '{vlm_model}'; overriding provider to '{inferred_vlm_provider}'."
             )
@@ -457,7 +529,6 @@ def build_bookrag_workflow_partition_node(
                 f"bookrag infer_table_structure for {src.name} is ignored when workflow strategy='auto'; use the Table to HTML enrichment node instead."
             )
         settings: dict[str, Any] = {
-            "strategy": "auto",
             "output_format": "application/json",
             "format_html": False,
             "unique_element_ids": unique_element_ids,
@@ -478,15 +549,12 @@ def build_bookrag_workflow_partition_node(
         }
     elif requested_strategy == "vlm":
         settings = {
-            "strategy": "vlm",
             "output_format": "application/json",
             "format_html": False,
             "unique_element_ids": unique_element_ids,
             "is_dynamic": False,
             "allow_fast": False,
         }
-        if infer_table_structure:
-            settings["infer_table_structure"] = True
         if vlm_provider:
             settings["provider"] = vlm_provider
         if vlm_model:
@@ -504,8 +572,9 @@ def build_bookrag_workflow_partition_node(
             "strategy": requested_strategy,
             "include_page_breaks": False,
             "unique_element_ids": unique_element_ids,
-            "coordinates": coordinates,
         }
+        if requested_strategy == "hi_res":
+            settings["coordinates"] = coordinates
         if languages:
             settings["ocr_languages"] = languages
         if normalized_extract_types:
@@ -636,22 +705,24 @@ def build_bookrag_reusable_workflow_definition(
         )
         or "openai_ner"
     ).strip() or "openai_ner"
-    ner_provider_type = str(
-        _first_defined(
-            create_values.get("multi_format_bookrag_ner_provider_type", ""),
-            runtime.get("bookrag_ner_provider_type"),
-            os.getenv("BOOKRAG_NER_PROVIDER_TYPE", ""),
-        )
-        or ""
-    ).strip()
-    ner_model = str(
-        _first_defined(
-            create_values.get("multi_format_bookrag_ner_model", ""),
-            runtime.get("bookrag_ner_model"),
-            os.getenv("BOOKRAG_NER_MODEL", ""),
-        )
-        or ""
-    ).strip()
+    def _bookrag_prompter_settings(prefix: str, subtype: str) -> dict[str, Any]:
+        provider_type = str(
+            _first_defined(
+                create_values.get(f"multi_format_bookrag_{prefix}_provider_type", ""),
+                runtime.get(f"bookrag_{prefix}_provider_type"),
+                os.getenv(f"BOOKRAG_{prefix.upper()}_PROVIDER_TYPE", ""),
+            )
+            or ""
+        ).strip()
+        model = str(
+            _first_defined(
+                create_values.get(f"multi_format_bookrag_{prefix}_model", ""),
+                runtime.get(f"bookrag_{prefix}_model"),
+                os.getenv(f"BOOKRAG_{prefix.upper()}_MODEL", ""),
+            )
+            or ""
+        ).strip()
+        return _resolve_prompter_settings(subtype=subtype, provider_type=provider_type, model=model)
 
     partition_node, _, partition_warnings = build_bookrag_workflow_partition_node(
         src=Path("bookrag_document"),
@@ -660,7 +731,7 @@ def build_bookrag_reusable_workflow_definition(
         image_partition_parameters=image_partition_parameters,
     )
     warnings.extend(partition_warnings)
-    if str(partition_node.get("settings", {}).get("strategy") or "").lower() == "vlm":
+    if _partition_route_label(partition_node) == "vlm":
         redundant_enrichments = [
             label
             for enabled, label in (
@@ -682,34 +753,16 @@ def build_bookrag_reusable_workflow_definition(
         enable_table_description = False
         enable_generative_ocr = False
 
-    subtype_provider_map = {"openai_ner": "openai", "anthropic_ner": "anthropic"}
-    expected_ner_provider = subtype_provider_map.get(ner_subtype, "")
-    inferred_ner_provider = _infer_provider_from_model_name(ner_model)
-    if expected_ner_provider and ner_provider_type and ner_provider_type.lower() != expected_ner_provider:
-        warnings.append(
-            f"bookrag NER provider_type '{ner_provider_type}' does not match subtype '{ner_subtype}'; overriding provider_type to '{expected_ner_provider}'."
-        )
-        ner_provider_type = expected_ner_provider
-    elif expected_ner_provider and not ner_provider_type:
-        ner_provider_type = expected_ner_provider
-    if ner_model and inferred_ner_provider and expected_ner_provider and inferred_ner_provider != expected_ner_provider:
-        warnings.append(
-            f"bookrag NER model '{ner_model}' does not match subtype '{ner_subtype}'; omitting explicit model setting."
-        )
-        ner_model = ""
-
     workflow_nodes: list[dict[str, Any]] = [partition_node]
-    partition_strategy_label = partition_node['settings'].get('strategy', 'auto')
+    partition_strategy_label = _partition_route_label(partition_node)
     partition_subtype_label = partition_node.get('subtype', '') or 'unknown'
     profile_parts = [f"partition:{partition_subtype_label}:{partition_strategy_label}"]
-    # Current Pipeline API enrichment contracts encode the provider in subtype
-    # and document an empty settings object. NER is the exception below.
     if enable_image_description:
         workflow_nodes.append({
             "name": "Image Description",
             "type": "prompter",
             "subtype": image_subtype,
-            "settings": {},
+            "settings": _bookrag_prompter_settings("image_description", image_subtype),
         })
         profile_parts.append("image_description")
     if enable_table_to_html:
@@ -717,7 +770,7 @@ def build_bookrag_reusable_workflow_definition(
             "name": "Table to HTML",
             "type": "prompter",
             "subtype": table_to_html_subtype,
-            "settings": {},
+            "settings": _bookrag_prompter_settings("table_to_html", table_to_html_subtype),
         })
         profile_parts.append("table_to_html")
     if enable_table_description:
@@ -725,7 +778,7 @@ def build_bookrag_reusable_workflow_definition(
             "name": "Table Description",
             "type": "prompter",
             "subtype": table_description_subtype,
-            "settings": {},
+            "settings": _bookrag_prompter_settings("table_description", table_description_subtype),
         })
         profile_parts.append("table_description")
     if enable_generative_ocr:
@@ -733,20 +786,15 @@ def build_bookrag_reusable_workflow_definition(
             "name": "Generative OCR",
             "type": "prompter",
             "subtype": generative_ocr_subtype,
-            "settings": {},
+            "settings": _bookrag_prompter_settings("generative_ocr", generative_ocr_subtype),
         })
         profile_parts.append("generative_ocr")
     if enable_ner:
-        ner_settings: dict[str, Any] = {}
-        if ner_provider_type:
-            ner_settings["provider_type"] = ner_provider_type
-        if ner_model:
-            ner_settings["model"] = ner_model
         workflow_nodes.append({
             "name": "Named Entity Recognition",
             "type": "prompter",
             "subtype": ner_subtype,
-            "settings": ner_settings,
+            "settings": _bookrag_prompter_settings("ner", ner_subtype),
         })
         profile_parts.append(f"ner:{ner_subtype}")
 
@@ -918,7 +966,7 @@ def build_multi_format_workflow_definition(
         "workflow_name": workflow_name,
         "workflow_nodes": workflow_nodes,
     }
-    partition_strategy_label = partition_node['settings'].get('strategy', 'auto')
+    partition_strategy_label = _partition_route_label(partition_node)
     partition_subtype_label = partition_node.get('subtype', '') or 'unknown'
     profile_parts = [f"partition:{partition_subtype_label}:{partition_strategy_label}"]
     for node in enrichment_nodes:

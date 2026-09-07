@@ -27,6 +27,73 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
             self.assertEqual(multi_format._resolve_bookrag_csv_load_workers(42), 5)
             self.assertEqual(multi_format._resolve_bookrag_csv_load_workers(3), 3)
 
+    def test_csv_document_progress_maps_completed_files_to_transform_range(self) -> None:
+        updates = []
+
+        for completed in range(1, 4):
+            multi_format._report_csv_document_progress(
+                updates.append,
+                completed=completed,
+                total=3,
+            )
+        multi_format._report_csv_document_progress(None, completed=3, total=3)
+
+        self.assertEqual(updates, [36, 63, 90])
+
+    def test_csv_generation_target_rejects_only_matching_loaded_run(self) -> None:
+        loaded_run = {
+            "status": "ready",
+            "load_status": "ready",
+            "vector_store_name": "Existing_Store",
+            "target_database": "Target_DB",
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "already has loaded tables"):
+            multi_format._ensure_csv_generation_target_available(
+                [loaded_run],
+                vector_store_name="existing_store",
+                target_database="target-db",
+            )
+
+        for changed_value in (
+            {"load_status": "failed"},
+            {"status": "failed"},
+            {"vector_store_name": "another_store"},
+            {"target_database": "another_db"},
+        ):
+            with self.subTest(changed_value=changed_value):
+                multi_format._ensure_csv_generation_target_available(
+                    [{**loaded_run, **changed_value}],
+                    vector_store_name="existing_store",
+                    target_database="target-db",
+                )
+
+    def test_each_csv_mode_rejects_a_loaded_target_from_the_other_mode(self) -> None:
+        loaded_run = {
+            "status": "ready",
+            "load_status": "ready",
+            "vector_store_name": "existing_store",
+            "target_database": "target_db",
+        }
+
+        with mock.patch.object(multi_format, "list_bookrag_csv_runs", return_value=[]), mock.patch.object(
+            multi_format, "list_multi_format_csv_runs", return_value=[loaded_run]
+        ):
+            with self.assertRaisesRegex(RuntimeError, "already has loaded tables"):
+                multi_format.ensure_bookrag_csv_generation_target_available(
+                    vector_store_name="existing_store",
+                    target_database="target_db",
+                )
+
+        with mock.patch.object(multi_format, "list_bookrag_csv_runs", return_value=[loaded_run]), mock.patch.object(
+            multi_format, "list_multi_format_csv_runs", return_value=[]
+        ):
+            with self.assertRaisesRegex(RuntimeError, "already has loaded tables"):
+                multi_format.ensure_multi_format_csv_generation_target_available(
+                    vector_store_name="existing_store",
+                    target_database="target_db",
+                )
+
     def test_document_parsing_runs_only_parallel_json_stage(self) -> None:
         payloads = {
             "one.txt": [{"type": "NarrativeText", "element_id": "one", "text": "One", "metadata": {}}],
@@ -186,11 +253,13 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
                 stack.enter_context(mock.patch("app.services.multi_format.validate_bookrag_dataset_relationships"))
                 stack.enter_context(mock.patch("app.services.multi_format.prepare_bookrag_table_csv", side_effect=_write_csv))
 
+                progress_updates = []
                 first = multi_format.run_bookrag_json_to_csv(
                     parse_run_id=parse_run_id,
                     create_values=self._create_values(),
                     vector_store_name="demo",
                     target_database="demo_schema",
+                    progress_callback=progress_updates.append,
                 )
                 transform_barrier.reset()
                 second = multi_format.run_bookrag_json_to_csv(
@@ -202,6 +271,7 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
 
             parse_mock.assert_not_called()
             self.assertEqual(first["status"], "ready")
+            self.assertEqual(progress_updates, [50, 90])
             self.assertTrue(first["created_at"])
             self.assertEqual(first["success_count"], 2)
             self.assertEqual(first["csv_files_created"], 15)
@@ -430,7 +500,8 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
         )
         partition_node = request_parameters['workflow_nodes'][0]
         self.assertEqual(partition_node['subtype'], 'vlm')
-        self.assertEqual(partition_node['settings']['strategy'], 'auto')
+        self.assertTrue(partition_node['settings']['is_dynamic'])
+        self.assertNotIn('strategy', partition_node['settings'])
         self.assertNotIn('provider', partition_node['settings'])
         self.assertNotIn('model', partition_node['settings'])
         self.assertEqual(processing_profile, 'partition:vlm:auto,chunk:chunk_by_character')
@@ -562,9 +633,15 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
         )
         partition_node = request_parameters['workflow_nodes'][0]
         self.assertEqual(partition_node['subtype'], 'vlm')
-        self.assertEqual(partition_node['settings']['strategy'], 'auto')
+        self.assertTrue(partition_node['settings']['is_dynamic'])
+        self.assertNotIn('strategy', partition_node['settings'])
         self.assertEqual(partition_node['settings']['provider'], 'openai')
         self.assertEqual(partition_node['settings']['model'], 'gpt-4o')
+        enrichment_nodes = request_parameters['workflow_nodes'][1:-1]
+        self.assertEqual(enrichment_nodes[0]['settings'], {'provider_type': 'openai', 'model': 'gpt-5-mini'})
+        self.assertEqual(enrichment_nodes[1]['settings'], {})
+        self.assertEqual(enrichment_nodes[2]['settings'], {'provider_type': 'openai', 'model': 'gpt-5-mini'})
+        self.assertEqual(enrichment_nodes[3]['settings'], {'provider_type': 'openai', 'model': 'gpt-5-mini'})
         self.assertTrue(processing_profile.startswith('partition:vlm:auto'))
 
     def test_hi_res_route_builds_partition_enrich_chunk_chain(self) -> None:
@@ -593,7 +670,10 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
             ['Partitioner', 'Image Description', 'Table to HTML', 'Table Description', 'Generative OCR', 'Chunker'],
         )
         partition_node = request_parameters['workflow_nodes'][0]
-        self.assertEqual(partition_node['settings']['extract_image_block_types'], ['Table', 'Image'])
+        self.assertEqual(
+            partition_node['settings']['extract_image_block_types'],
+            ['Table', 'Image', 'Text', 'NarrativeText', 'Title', 'ListItem', 'UncategorizedText'],
+        )
         self.assertTrue(partition_node['settings']['infer_table_structure'])
         self.assertTrue(partition_node['settings']['pdf_infer_table_structure'])
         self.assertTrue(processing_profile.endswith('chunk:chunk_by_character'))
@@ -665,6 +745,14 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
             multi_format_bookrag_table_to_html_subtype='openai_table2html',
             multi_format_bookrag_table_description_subtype='openai_table_description',
             multi_format_bookrag_generative_ocr_subtype='openai_ocr',
+            multi_format_bookrag_image_description_provider_type='openai',
+            multi_format_bookrag_image_description_model='gpt-4o-mini',
+            multi_format_bookrag_table_to_html_provider_type='openai',
+            multi_format_bookrag_table_to_html_model='gpt-4o-mini',
+            multi_format_bookrag_table_description_provider_type='openai',
+            multi_format_bookrag_table_description_model='gpt-4o-mini',
+            multi_format_bookrag_generative_ocr_provider_type='openai',
+            multi_format_bookrag_generative_ocr_model='gpt-4o-mini',
             multi_format_bookrag_ner_subtype='openai_ner',
             multi_format_bookrag_ner_provider_type='openai',
             multi_format_bookrag_ner_model='gpt-4o-mini',
@@ -688,6 +776,9 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
             ['Partitioner', 'Image Description', 'Table to HTML', 'Table Description', 'Generative OCR', 'Named Entity Recognition'],
         )
         self.assertEqual(workflow_nodes[0]['settings']['strategy'], 'hi_res')
+        for node in workflow_nodes[1:5]:
+            self.assertEqual(node['settings']['provider_type'], 'openai')
+            self.assertEqual(node['settings']['model'], 'gpt-4o-mini')
         self.assertEqual(workflow_nodes[-1]['subtype'], 'openai_ner')
         self.assertEqual(workflow_nodes[-1]['settings']['provider_type'], 'openai')
         self.assertEqual(workflow_nodes[-1]['settings']['model'], 'gpt-4o-mini')
@@ -708,7 +799,8 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
         )
 
         self.assertEqual(partition_node['subtype'], 'vlm')
-        self.assertEqual(partition_node['settings']['strategy'], 'auto')
+        self.assertTrue(partition_node['settings']['is_dynamic'])
+        self.assertNotIn('strategy', partition_node['settings'])
         self.assertEqual(request_parameters['workflow_nodes'], [partition_node])
         self.assertEqual(len(warnings), 3)
         self.assertTrue(any('ocr_languages' in warning for warning in warnings))
@@ -730,10 +822,27 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
 
         self.assertEqual(warnings, [])
         self.assertEqual(partition_node['subtype'], 'vlm')
-        self.assertEqual(partition_node['settings']['strategy'], 'auto')
+        self.assertTrue(partition_node['settings']['is_dynamic'])
+        self.assertNotIn('strategy', partition_node['settings'])
         self.assertEqual(partition_node['settings']['provider'], 'openai')
         self.assertEqual(partition_node['settings']['model'], 'gpt-4o')
         self.assertEqual(partition_node['settings']['provider_api_key'], 'secret-key')
+
+    def test_bookrag_vlm_keeps_explicit_azure_openai_provider(self) -> None:
+        partition_node, _request_parameters, warnings = multi_format._build_bookrag_workflow_partition_node(
+            src=Path('sample.pdf'),
+            partition_strategy='vlm',
+            languages=[],
+            image_partition_parameters={
+                'vlm_provider': 'azure_openai',
+                'vlm_model': 'gpt-5-mini',
+                'unique_element_ids': True,
+            },
+        )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(partition_node['settings']['provider'], 'azure_openai')
+        self.assertEqual(partition_node['settings']['model'], 'gpt-5-mini')
 
     def test_bookrag_hi_res_partition_forwards_coordinates(self) -> None:
         partition_node, _request_parameters, warnings = multi_format._build_bookrag_workflow_partition_node(
@@ -749,25 +858,19 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertFalse(partition_node['settings']['coordinates'])
 
-    def test_bookrag_ner_model_mismatch_drops_explicit_model(self) -> None:
+    def test_bookrag_ner_model_mismatch_fails_before_submission(self) -> None:
         create_values = self._create_values(
             multi_format_bookrag_enable_ner='true',
             multi_format_bookrag_ner_subtype='openai_ner',
             multi_format_bookrag_ner_model='claude-sonnet-4-20250514',
         )
-        _workflow_name, workflow_nodes, _request_parameters, warnings, _processing_profile = multi_format._build_bookrag_reusable_workflow_definition(
-            create_values=create_values,
-            partition_strategy='vlm',
-            languages=[],
-            image_partition_parameters={'unique_element_ids': True},
-        )
-
-        ner_node = workflow_nodes[-1]
-        self.assertEqual(ner_node['name'], 'Named Entity Recognition')
-        self.assertEqual(ner_node['subtype'], 'openai_ner')
-        self.assertEqual(ner_node['settings']['provider_type'], 'openai')
-        self.assertNotIn('model', ner_node['settings'])
-        self.assertTrue(any('does not match subtype' in warning for warning in warnings))
+        with self.assertRaisesRegex(ValueError, "does not match provider_type"):
+            multi_format._build_bookrag_reusable_workflow_definition(
+                create_values=create_values,
+                partition_strategy='hi_res',
+                languages=[],
+                image_partition_parameters={'unique_element_ids': True},
+            )
 
     def test_bookrag_explicit_vlm_omits_redundant_enrichments(self) -> None:
         create_values = self._create_values(
@@ -788,6 +891,27 @@ class MultiFormatWorkflowDefinitionTests(unittest.TestCase):
 
         self.assertEqual([node['name'] for node in workflow_nodes], ['Partitioner'])
         self.assertTrue(any('redundant enrichment nodes were omitted' in warning for warning in warnings))
+
+    def test_bookrag_explicit_vlm_keeps_ner(self) -> None:
+        create_values = self._create_values(
+            multi_format_bookrag_enable_ner='true',
+            multi_format_bookrag_ner_subtype='openai_ner',
+            multi_format_bookrag_ner_provider_type='openai',
+            multi_format_bookrag_ner_model='gpt-4o-mini',
+        )
+
+        _workflow_name, workflow_nodes, _request_parameters, warnings, _profile = (
+            multi_format._build_bookrag_reusable_workflow_definition(
+                create_values=create_values,
+                partition_strategy='vlm',
+                languages=[],
+                image_partition_parameters={'unique_element_ids': True},
+            )
+        )
+
+        self.assertEqual([node['name'] for node in workflow_nodes], ['Partitioner', 'Named Entity Recognition'])
+        self.assertEqual(workflow_nodes[-1]['settings'], {'provider_type': 'openai', 'model': 'gpt-4o-mini'})
+        self.assertEqual(warnings, [])
 
     def test_bookrag_image_partition_options_read_bookrag_overrides(self) -> None:
         options, warnings, summary = multi_format._resolve_bookrag_image_partition_options(
@@ -1828,13 +1952,16 @@ class MultiFormatStagedPipelineTests(unittest.TestCase):
             ), mock.patch.object(
                 multi_format, "MULTI_FORMAT_CSV_STAGE_DIR_DEFAULT", csv_root
             ):
+                progress_updates = []
                 generated = multi_format.run_multi_format_json_to_csv(
                     parse_run_id=parse_run_id,
                     vector_store_name="demo",
                     target_database="demo_schema",
+                    progress_callback=progress_updates.append,
                 )
 
                 self.assertEqual(generated["status"], "ready")
+                self.assertEqual(progress_updates, [50, 90])
                 self.assertEqual(generated["qualified_table"], "demo_schema.demo_unstructured")
                 self.assertEqual(generated["csv_file_count"], 2)
                 self.assertEqual(generated["row_count"], 2)

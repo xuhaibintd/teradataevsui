@@ -49,6 +49,7 @@ class BrowserApplication:
             "e2e_store": "Browser BookRAG corpus unstructured_bookrag_flg",
         }
         self.destroy_error = None
+        self.destroy_delay_seconds = 0.0
         old_uploads = runtime.UPLOAD_DIR
         old_project = runtime.PROJECT_DIR
         # All loaded modules' runtime paths are redirected, while source templates/assets stay real.
@@ -156,6 +157,8 @@ class BrowserApplication:
 
             def destroy(self, **kwargs):
                 fixture.calls.append("destroy")
+                if fixture.destroy_delay_seconds:
+                    time.sleep(fixture.destroy_delay_seconds)
                 if fixture.destroy_error is not None:
                     raise RuntimeError(fixture.destroy_error)
                 fixture.stores = [item for item in fixture.stores if item != self.name]

@@ -212,6 +212,49 @@ class AuthStoreTests(unittest.TestCase):
             self.assertNotIn("private-unstructured-key", raw)
             self.assertIn("https://unstructured.example/api/v1", raw)
 
+    def test_initial_admin_is_created_once_with_a_hashed_password(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = self._store(tmpdir)
+
+            principal = store.create_initial_admin(
+                username="first_admin",
+                password="first-admin-password",
+            )
+
+            self.assertEqual(principal.role, "admin")
+            self.assertIsNotNone(store.authenticate("first_admin", "first-admin-password"))
+            with self.assertRaisesRegex(RuntimeError, "already configured"):
+                store.create_initial_admin(
+                    username="second_admin",
+                    password="second-admin-password",
+                )
+            with store._connect() as connection:
+                raw = str(connection.execute("SELECT * FROM users").fetchall())
+                audit = connection.execute(
+                    "SELECT action FROM audit_logs WHERE username='first_admin'"
+                ).fetchone()
+            self.assertNotIn("first-admin-password", raw)
+            self.assertEqual(str(audit["action"]), "user.initial_admin")
+
+    def test_concurrent_initial_admin_creation_allows_one_winner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = self._store(tmpdir)
+
+            def create(username: str) -> str:
+                try:
+                    return store.create_initial_admin(
+                        username=username,
+                        password=f"{username}-password",
+                    ).username
+                except RuntimeError:
+                    return "rejected"
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(create, ("first_admin", "second_admin")))
+
+            self.assertEqual(results.count("rejected"), 1)
+            self.assertEqual(store.count_users(), 1)
+
     def test_legacy_pem_path_is_migrated_into_encrypted_database_storage(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             project_root = Path(tmpdir)

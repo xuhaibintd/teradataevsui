@@ -127,6 +127,18 @@ from app.services.unstructured_workflow_builder import (
 )
 
 ResolvePathFn = Callable[[str], str]
+ProgressCallback = Callable[[int], None]
+
+
+def _report_csv_document_progress(
+    progress_callback: ProgressCallback | None,
+    *,
+    completed: int,
+    total: int,
+) -> None:
+    if progress_callback is None or total <= 0:
+        return
+    progress_callback(10 + min(80, int(max(0, completed) * 80 / total)))
 
 
 def _resolve_bookrag_unstructured_workers(file_count: int) -> int:
@@ -281,6 +293,10 @@ def _resolve_bookrag_image_partition_options(create_values: dict[str, str]) -> t
     extract_mode = raw_extract_types.lower()
     if extract_mode == "auto":
         extract_image_block_types = ["Image", "Table"]
+        if _to_bool(create_values.get("multi_format_bookrag_enable_generative_ocr", "false")):
+            extract_image_block_types.extend(
+                ["Text", "NarrativeText", "Title", "ListItem", "UncategorizedText"]
+            )
     else:
         extract_image_block_types = _parse_csv_values(raw_extract_types)
 
@@ -981,6 +997,47 @@ def list_bookrag_csv_runs(*, include_incomplete: bool = False) -> list[dict[str,
     return runs
 
 
+def _ensure_csv_generation_target_available(
+    runs: list[dict[str, Any]],
+    *,
+    vector_store_name: str,
+    target_database: str,
+) -> None:
+    requested_name = str(vector_store_name or "").strip()
+    requested_database = _sanitize_teradata_identifier(
+        str(target_database or "").strip(), fallback="", allow_empty=True
+    )
+    if not requested_name or not requested_database:
+        return
+    for run in runs:
+        if str(run.get("status") or "") != "ready" or str(run.get("load_status") or "") != "ready":
+            continue
+        if str(run.get("vector_store_name") or "").strip().casefold() != requested_name.casefold():
+            continue
+        if str(run.get("target_database") or "").strip().casefold() != requested_database.casefold():
+            continue
+        raise RuntimeError(
+            f"Target Vector Store '{requested_name}' already has loaded tables in database "
+            f"'{requested_database}'. Use a different Target Vector Store Name; CSV generation was not started."
+        )
+
+
+def ensure_bookrag_csv_generation_target_available(*, vector_store_name: str, target_database: str) -> None:
+    _ensure_csv_generation_target_available(
+        [*list_bookrag_csv_runs(), *list_multi_format_csv_runs()],
+        vector_store_name=vector_store_name,
+        target_database=target_database,
+    )
+
+
+def ensure_multi_format_csv_generation_target_available(*, vector_store_name: str, target_database: str) -> None:
+    _ensure_csv_generation_target_available(
+        [*list_bookrag_csv_runs(), *list_multi_format_csv_runs()],
+        vector_store_name=vector_store_name,
+        target_database=target_database,
+    )
+
+
 def _find_failed_bookrag_csv_runs_for_target(
     *,
     vector_store_name: str,
@@ -1599,6 +1656,7 @@ def run_multi_format_json_to_csv(
     parse_run_id: str,
     vector_store_name: str,
     target_database: str,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Map stored JSON through the existing chunk-row mapping into unstructured CSV files."""
     parse_manifest_path, parse_manifest = _resolve_multi_format_parse_manifest(parse_run_id)
@@ -1618,6 +1676,10 @@ def run_multi_format_json_to_csv(
     )
     if not effective_target_database:
         raise RuntimeError("Target Database is required before generating CSV files.")
+    ensure_multi_format_csv_generation_target_available(
+        vector_store_name=effective_vector_store_name,
+        target_database=effective_target_database,
+    )
     table_name, _, qualified_table, target_warnings = _resolve_multi_format_table_target(
         {"target_database": effective_target_database},
         {"target_database": effective_target_database},
@@ -1737,6 +1799,11 @@ def run_multi_format_json_to_csv(
                         "error": _sanitize_teradata_text(str(ex))[:2000],
                     }
                 )
+            _report_csv_document_progress(
+                progress_callback,
+                completed=len(results),
+                total=len(documents),
+            )
     results.sort(key=lambda item: int(item["source_index"]))
     success_count = sum(1 for item in results if item["status"] == "success")
     failure_count = len(results) - success_count
@@ -2189,6 +2256,7 @@ def run_bookrag_json_to_csv(
     create_values: dict[str, str],
     vector_store_name: str = "",
     target_database: str = "",
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Regenerate per-document/per-table CSV files from a reusable raw JSON parsing run."""
     parse_manifest_path, parse_manifest = _resolve_bookrag_parse_manifest(parse_run_id)
@@ -2208,6 +2276,10 @@ def run_bookrag_json_to_csv(
     )
     if not effective_target_database:
         raise RuntimeError("Target Database is required before generating CSV files.")
+    ensure_bookrag_csv_generation_target_available(
+        vector_store_name=effective_vector_store_name,
+        target_database=effective_target_database,
+    )
     table_targets = build_bookrag_table_targets(effective_vector_store_name)
     qualified_table_targets = {
         table_key: f"{effective_target_database}.{table_name}"
@@ -2358,6 +2430,11 @@ def run_bookrag_json_to_csv(
                         "error": _sanitize_teradata_text(str(ex))[:2000],
                     }
                 )
+            _report_csv_document_progress(
+                progress_callback,
+                completed=len(results),
+                total=len(documents),
+            )
     results.sort(key=lambda value: int(value["source_index"]))
     success_count = sum(1 for item in results if item["status"] == "success")
     failure_count = len(results) - success_count

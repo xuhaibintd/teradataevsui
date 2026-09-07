@@ -1,59 +1,153 @@
 {
+  "_meta": {
+    "schema_version": 1,
+    "source": "https://docs.unstructured.io/api-reference/workflow/models",
+    "source_checked_at": "2026-09-07"
+  },
   "partitioner_vlm": {
     "Anthropic": [
       "claude-opus-4-5-20251101",
       "claude-opus-4-6",
-      "claude-sonnet-4-20250514",
-      "claude-sonnet-4-5-20250929"
+      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-4-6"
+    ],
+    "Azure OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini"
     ],
     "Bedrock": [
       "us.amazon.nova-lite-v1:0",
       "us.amazon.nova-pro-v1:0",
-      "us.anthropic.claude-3-haiku-20240307-v1:0",
-      "us.anthropic.claude-3-opus-20240229-v1:0",
-      "us.anthropic.claude-3-sonnet-20240229-v1:0",
       "us.anthropic.claude-opus-4-5-20251101-v1:0",
       "us.anthropic.claude-opus-4-6-v1",
       "us.anthropic.claude-sonnet-4-20250514-v1:0",
-      "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+      "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "us.anthropic.claude-sonnet-4-6"
     ],
     "OpenAI": [
       "gpt-4o",
       "gpt-4o-mini",
       "gpt-5-mini",
-      "gpt-5.2"
-    ],
-    "Azure OpenAI": [
-      "gpt-4o",
-      "gpt-4o-mini",
-      "gpt-5-mini"
+      "gpt-5.2",
+      "gpt-5.4-mini"
     ],
     "Vertex AI": [
-      "gemini-2.0-flash-001",
       "gemini-2.5-flash",
       "gemini-2.5-pro"
     ]
   },
-  "enrichment": {
+  "generative_ocr": {
     "Anthropic": [
       "claude-opus-4-5-20251101",
       "claude-opus-4-6",
-      "claude-sonnet-4-20250514",
-      "claude-sonnet-4-5-20250929"
-    ],
-    "OpenAI": [
-      "gpt-4o",
-      "gpt-4o-mini",
-      "gpt-5-mini",
-      "gpt-5.2"
+      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-4-6"
     ],
     "Azure OpenAI": [
       "gpt-4o",
       "gpt-4o-mini",
       "gpt-5-mini"
     ],
+    "Bedrock": [
+      "us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us.anthropic.claude-opus-4-5-20251101-v1:0",
+      "us.anthropic.claude-opus-4-6-v1",
+      "us.anthropic.claude-sonnet-4-20250514-v1:0",
+      "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "us.anthropic.claude-sonnet-4-6"
+    ],
+    "OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini",
+      "gpt-5.2",
+      "gpt-5.4-mini"
+    ]
+  },
+  "image_description": {
+    "Anthropic": [
+      "claude-opus-4-5-20251101",
+      "claude-opus-4-6",
+      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-4-6"
+    ],
+    "Azure OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini"
+    ],
+    "Bedrock": [
+      "us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us.anthropic.claude-opus-4-5-20251101-v1:0",
+      "us.anthropic.claude-opus-4-6-v1",
+      "us.anthropic.claude-sonnet-4-20250514-v1:0",
+      "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "us.anthropic.claude-sonnet-4-6"
+    ],
+    "OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini",
+      "gpt-5.2",
+      "gpt-5.4-mini"
+    ],
     "Vertex AI": [
-      "gemini-2.0-flash-001",
+      "gemini-2.5-flash",
+      "gemini-2.5-pro"
+    ]
+  },
+  "named_entity_recognition": {
+    "Anthropic": [
+      "claude-opus-4-5-20251101",
+      "claude-opus-4-6",
+      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-4-6"
+    ],
+    "Azure OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini"
+    ],
+    "OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini",
+      "gpt-5.2",
+      "gpt-5.4-mini"
+    ]
+  },
+  "table_description": {
+    "Anthropic": [
+      "claude-opus-4-5-20251101",
+      "claude-opus-4-6",
+      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-4-6"
+    ],
+    "Azure OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini"
+    ],
+    "Bedrock": [
+      "us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us.anthropic.claude-opus-4-5-20251101-v1:0",
+      "us.anthropic.claude-opus-4-6-v1",
+      "us.anthropic.claude-sonnet-4-20250514-v1:0",
+      "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "us.anthropic.claude-sonnet-4-6"
+    ],
+    "OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini",
+      "gpt-5.2",
+      "gpt-5.4-mini"
+    ],
+    "Vertex AI": [
       "gemini-2.5-flash",
       "gemini-2.5-pro"
     ]
@@ -62,19 +156,29 @@
     "Anthropic": [
       "claude-opus-4-5-20251101",
       "claude-opus-4-6",
-      "claude-sonnet-4-20250514",
-      "claude-sonnet-4-5-20250929"
-    ],
-    "OpenAI": [
-      "gpt-4o",
-      "gpt-4o-mini",
-      "gpt-5-mini",
-      "gpt-5.2"
+      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-4-6"
     ],
     "Azure OpenAI": [
       "gpt-4o",
       "gpt-4o-mini",
       "gpt-5-mini"
+    ],
+    "Bedrock": [
+      "us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us.anthropic.claude-opus-4-5-20251101-v1:0",
+      "us.anthropic.claude-opus-4-6-v1",
+      "us.anthropic.claude-sonnet-4-20250514-v1:0",
+      "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "us.anthropic.claude-sonnet-4-6"
+    ],
+    "OpenAI": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-5-mini",
+      "gpt-5.2",
+      "gpt-5.4-mini"
     ]
   }
 }

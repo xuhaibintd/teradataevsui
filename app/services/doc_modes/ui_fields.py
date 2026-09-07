@@ -8,7 +8,9 @@ from typing import Any
 from .constants import DOC_PIPELINE_UI_DEFAULTS
 
 
-_DEFAULT_MODEL_CATALOG_PATH = Path(__file__).resolve().parents[2] / "config" / "unstructured_models.json"
+_CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+_BUNDLED_MODEL_CATALOG_PATH = _CONFIG_DIR / "unstructured_models.example.json"
+_LOCAL_MODEL_CATALOG_PATH = _CONFIG_DIR / "unstructured_models.json"
 
 
 def _merge_wrapper_class(existing: str | None, extra: str | None) -> str:
@@ -20,16 +22,42 @@ def _merge_wrapper_class(existing: str | None, extra: str | None) -> str:
     return " ".join(dict.fromkeys(parts))
 
 
-def _load_model_catalog() -> dict[str, Any]:
-    raw_path = os.getenv("UNSTRUCTURED_MODEL_CATALOG_PATH", "").strip()
-    path = Path(raw_path) if raw_path else _DEFAULT_MODEL_CATALOG_PATH
-    if not path.exists():
+def _read_model_catalog(path: Path) -> dict[str, Any]:
+    if not path.is_file():
         return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _merge_model_catalog(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _merge_model_catalog(current, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _expand_legacy_model_sections(catalog: dict[str, Any]) -> dict[str, Any]:
+    expanded = dict(catalog)
+    legacy_enrichment = catalog.get("enrichment")
+    if isinstance(legacy_enrichment, dict):
+        for key in ("generative_ocr", "image_description", "named_entity_recognition", "table_description"):
+            expanded.setdefault(key, legacy_enrichment)
+    return expanded
+
+
+def _load_model_catalog() -> dict[str, Any]:
+    bundled = _read_model_catalog(_BUNDLED_MODEL_CATALOG_PATH)
+    raw_path = os.getenv("UNSTRUCTURED_MODEL_CATALOG_PATH", "").strip()
+    override_path = Path(raw_path) if raw_path else _LOCAL_MODEL_CATALOG_PATH
+    override = _expand_legacy_model_sections(_read_model_catalog(override_path))
+    return _merge_model_catalog(bundled, override)
 
 
 def _normalize_model_ids(raw: Any) -> list[str]:
@@ -42,51 +70,28 @@ def _model_options(model_ids: list[str]) -> list[dict[str, str]]:
     return [{"value": model_id, "label": model_id} for model_id in model_ids]
 
 
-def _model_option_groups(catalog: dict[str, Any], key: str, fallback: dict[str, list[str]]) -> list[dict[str, object]]:
+def _model_option_groups(catalog: dict[str, Any], key: str) -> list[dict[str, object]]:
     section = catalog.get(key)
-    merged = dict(fallback)
-    if isinstance(section, dict):
-        for raw_label, raw_models in section.items():
-            label = str(raw_label).strip()
-            models = _normalize_model_ids(raw_models)
-            if label and models:
-                merged[label] = models
-    return [{"label": label, "options": _model_options(models)} for label, models in merged.items()]
+    if not isinstance(section, dict):
+        return []
+    groups: list[dict[str, object]] = []
+    for raw_label, raw_models in section.items():
+        label = str(raw_label).strip()
+        models = _normalize_model_ids(raw_models)
+        if label and models:
+            groups.append({"label": label, "options": _model_options(models)})
+    return groups
 
 
 def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
     defaults = DOC_PIPELINE_UI_DEFAULTS
     model_catalog = _load_model_catalog()
-    default_vlm_models = {
-        "Anthropic": [
-            "claude-opus-4-5-20251101",
-            "claude-opus-4-6",
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4-5-20250929",
-        ],
-        "Bedrock": [
-            "us.amazon.nova-lite-v1:0",
-            "us.amazon.nova-pro-v1:0",
-            "us.anthropic.claude-3-haiku-20240307-v1:0",
-            "us.anthropic.claude-3-opus-20240229-v1:0",
-            "us.anthropic.claude-3-sonnet-20240229-v1:0",
-            "us.anthropic.claude-opus-4-5-20251101-v1:0",
-            "us.anthropic.claude-opus-4-6-v1",
-            "us.anthropic.claude-sonnet-4-20250514-v1:0",
-            "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        ],
-        "OpenAI": ["gpt-4o", "gpt-4o-mini", "gpt-5-mini", "gpt-5.2"],
-        "Azure OpenAI": ["gpt-4o", "gpt-4o-mini", "gpt-5-mini"],
-        "Vertex AI": ["gemini-2.0-flash-001", "gemini-2.5-flash", "gemini-2.5-pro"],
-    }
-    default_table_to_html_models = {
-        "Anthropic": default_vlm_models["Anthropic"],
-        "OpenAI": default_vlm_models["OpenAI"],
-        "Azure OpenAI": default_vlm_models["Azure OpenAI"],
-    }
-    vlm_model_option_groups = _model_option_groups(model_catalog, "partitioner_vlm", default_vlm_models)
-    enrichment_model_groups = _model_option_groups(model_catalog, "enrichment", default_vlm_models)
-    table_to_html_model_groups = _model_option_groups(model_catalog, "table_to_html", default_table_to_html_models)
+    vlm_model_option_groups = _model_option_groups(model_catalog, "partitioner_vlm")
+    generative_ocr_model_groups = _model_option_groups(model_catalog, "generative_ocr")
+    image_description_model_groups = _model_option_groups(model_catalog, "image_description")
+    ner_model_groups = _model_option_groups(model_catalog, "named_entity_recognition")
+    table_description_model_groups = _model_option_groups(model_catalog, "table_description")
+    table_to_html_model_groups = _model_option_groups(model_catalog, "table_to_html")
 
     def _select_field(
         name: str,
@@ -153,7 +158,7 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
     bookrag_partition_hi_res_attrs = {"data-bookrag-partition-routes": "hi_res"}
     bookrag_partition_vlm_attrs = {"data-bookrag-partition-routes": "auto vlm"}
     bookrag_enrichment_route_attrs = {"data-bookrag-partition-routes": "auto hi_res"}
-    bookrag_ner_model_groups = [group for group in enrichment_model_groups if group["label"] in {"Anthropic", "OpenAI"}]
+    bookrag_ner_model_groups = [group for group in ner_model_groups if group["label"] in {"Anthropic", "Azure OpenAI", "OpenAI"}]
     chunk_title_attrs = {"data-chunk-strategies": "chunk_by_title"}
     chunk_similarity_attrs = {"data-chunk-strategies": "chunk_by_similarity"}
     chunk_sequential_attrs = {"data-chunk-strategies": "chunk_by_character chunk_by_title chunk_by_page"}
@@ -252,9 +257,9 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
         ),
         "multi_format_extract_image_block_types": _select_field(
             "multi_format_extract_image_block_types",
-            "Image/Table Block Extraction",
+            "Enrichment Block Extraction",
             "multi_format_extract_image_block_types",
-            help_text="Extract image/table blocks for downstream enrichments.",
+            help_text="Extract blocks required by downstream enrichments.",
             wrapper_attrs=partition_hi_res_attrs,
             options=[
                 {"value": "auto", "label": "auto"},
@@ -262,6 +267,8 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
                 {"value": "Image", "label": "Image"},
                 {"value": "Table", "label": "Table"},
                 {"value": "Image,Table", "label": "Image + Table"},
+                {"value": "Text,NarrativeText,Title,ListItem,UncategorizedText", "label": "OCR text blocks"},
+                {"value": "Image,Table,Text,NarrativeText,Title,ListItem,UncategorizedText", "label": "Image + Table + OCR text"},
             ],
             wrapper_class="field doc-field-medium",
         ),
@@ -350,7 +357,7 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
             wrapper_attrs=enrichment_route_attrs,
             input_attrs={"data-provider-model-target": "generative_ocr"},
             options=[{"value": "", "label": "(platform default)"}],
-            option_groups=[group for group in enrichment_model_groups if group["label"] != "Vertex AI"],
+            option_groups=generative_ocr_model_groups,
             wrapper_class="field doc-field-xxl",
         ),
         "multi_format_table_to_html_subtype": _select_field(
@@ -424,7 +431,7 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
             wrapper_attrs=enrichment_route_attrs,
             input_attrs={"data-provider-model-target": "table_description"},
             options=[{"value": "", "label": "(platform default)"}],
-            option_groups=enrichment_model_groups,
+            option_groups=table_description_model_groups,
             wrapper_class="field doc-field-xxl",
         ),
         "multi_format_image_description_subtype": _select_field(
@@ -433,6 +440,7 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
             "multi_format_image_description_subtype",
             wrapper_attrs=enrichment_route_attrs,
             options=[
+                {"value": "twopass_image_description", "label": "twopass_image_description"},
                 {"value": "anthropic_image_description", "label": "anthropic_image_description"},
                 {"value": "bedrock_image_description", "label": "bedrock_image_description"},
                 {"value": "openai_image_description", "label": "openai_image_description"},
@@ -447,6 +455,7 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
             wrapper_attrs=enrichment_route_attrs,
             input_attrs={"data-provider-model-key": "image_description"},
             options=[
+                {"value": "", "label": "(not used for twopass)"},
                 {"value": "anthropic", "label": "Anthropic"},
                 {"value": "bedrock", "label": "Bedrock"},
                 {"value": "openai", "label": "OpenAI"},
@@ -462,7 +471,7 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
             wrapper_attrs=enrichment_route_attrs,
             input_attrs={"data-provider-model-target": "image_description"},
             options=[{"value": "", "label": "(platform default)"}],
-            option_groups=enrichment_model_groups,
+            option_groups=image_description_model_groups,
             wrapper_class="field doc-field-xxl",
         ),
         "multi_format_chunk_strategy": _select_field(
@@ -628,9 +637,9 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
         ),
         "multi_format_bookrag_extract_image_block_types": _select_field(
             "multi_format_bookrag_extract_image_block_types",
-            "Image/Table Block Extraction",
+            "Enrichment Block Extraction",
             "multi_format_bookrag_extract_image_block_types",
-            help_text="Extract image/table blocks for downstream enrichments.",
+            help_text="Extract blocks required by downstream enrichments.",
             wrapper_attrs=bookrag_partition_hi_res_attrs,
             options=[
                 {"value": "auto", "label": "auto"},
@@ -638,6 +647,8 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
                 {"value": "Image", "label": "Image"},
                 {"value": "Table", "label": "Table"},
                 {"value": "Image,Table", "label": "Image + Table"},
+                {"value": "Text,NarrativeText,Title,ListItem,UncategorizedText", "label": "OCR text blocks"},
+                {"value": "Image,Table,Text,NarrativeText,Title,ListItem,UncategorizedText", "label": "Image + Table + OCR text"},
             ],
             wrapper_class="field doc-field-medium",
         ),
@@ -717,6 +728,30 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
             ],
             wrapper_class="field doc-field-long",
         ),
+        "multi_format_bookrag_generative_ocr_provider_type": _select_field(
+            "multi_format_bookrag_generative_ocr_provider_type",
+            "Provider",
+            "multi_format_bookrag_generative_ocr_provider_type",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-key": "bookrag_generative_ocr"},
+            options=[
+                {"value": "anthropic", "label": "Anthropic"},
+                {"value": "bedrock", "label": "Bedrock"},
+                {"value": "openai", "label": "OpenAI"},
+                {"value": "azure_openai", "label": "Azure OpenAI"},
+            ],
+            wrapper_class="field doc-field-medium",
+        ),
+        "multi_format_bookrag_generative_ocr_model": _select_field(
+            "multi_format_bookrag_generative_ocr_model",
+            "Model",
+            "multi_format_bookrag_generative_ocr_model",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-target": "bookrag_generative_ocr"},
+            options=[],
+            option_groups=generative_ocr_model_groups,
+            wrapper_class="field doc-field-xxl",
+        ),
         "multi_format_bookrag_table_to_html_subtype": _select_field(
             "multi_format_bookrag_table_to_html_subtype",
             "Subtype",
@@ -728,6 +763,32 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
                 {"value": "openai_table2html", "label": "openai_table2html"},
             ],
             wrapper_class="field doc-field-long",
+        ),
+        "multi_format_bookrag_table_to_html_provider_type": _select_field(
+            "multi_format_bookrag_table_to_html_provider_type",
+            "Provider",
+            "multi_format_bookrag_table_to_html_provider_type",
+            help_text="Ignored for two-pass.",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-key": "bookrag_table_to_html"},
+            options=[
+                {"value": "", "label": "(not used for twopass)"},
+                {"value": "anthropic", "label": "Anthropic"},
+                {"value": "openai", "label": "OpenAI"},
+                {"value": "azure_openai", "label": "Azure OpenAI"},
+            ],
+            wrapper_class="field doc-field-medium",
+        ),
+        "multi_format_bookrag_table_to_html_model": _select_field(
+            "multi_format_bookrag_table_to_html_model",
+            "Model",
+            "multi_format_bookrag_table_to_html_model",
+            help_text="Ignored for two-pass.",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-target": "bookrag_table_to_html"},
+            options=[{"value": "", "label": "(not used for twopass)"}],
+            option_groups=table_to_html_model_groups,
+            wrapper_class="field doc-field-xxl",
         ),
         "multi_format_bookrag_table_description_subtype": _select_field(
             "multi_format_bookrag_table_description_subtype",
@@ -742,18 +803,72 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
             ],
             wrapper_class="field doc-field-long",
         ),
+        "multi_format_bookrag_table_description_provider_type": _select_field(
+            "multi_format_bookrag_table_description_provider_type",
+            "Provider",
+            "multi_format_bookrag_table_description_provider_type",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-key": "bookrag_table_description"},
+            options=[
+                {"value": "anthropic", "label": "Anthropic"},
+                {"value": "bedrock", "label": "Bedrock"},
+                {"value": "openai", "label": "OpenAI"},
+                {"value": "azure_openai", "label": "Azure OpenAI"},
+                {"value": "vertexai", "label": "Vertex AI"},
+            ],
+            wrapper_class="field doc-field-medium",
+        ),
+        "multi_format_bookrag_table_description_model": _select_field(
+            "multi_format_bookrag_table_description_model",
+            "Model",
+            "multi_format_bookrag_table_description_model",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-target": "bookrag_table_description"},
+            options=[],
+            option_groups=table_description_model_groups,
+            wrapper_class="field doc-field-xxl",
+        ),
         "multi_format_bookrag_image_description_subtype": _select_field(
             "multi_format_bookrag_image_description_subtype",
             "Subtype",
             "multi_format_bookrag_image_description_subtype",
             wrapper_attrs=bookrag_enrichment_route_attrs,
             options=[
+                {"value": "twopass_image_description", "label": "twopass_image_description"},
                 {"value": "anthropic_image_description", "label": "anthropic_image_description"},
                 {"value": "bedrock_image_description", "label": "bedrock_image_description"},
                 {"value": "openai_image_description", "label": "openai_image_description"},
                 {"value": "vertexai_image_description", "label": "vertexai_image_description"},
             ],
             wrapper_class="field doc-field-long",
+        ),
+        "multi_format_bookrag_image_description_provider_type": _select_field(
+            "multi_format_bookrag_image_description_provider_type",
+            "Provider",
+            "multi_format_bookrag_image_description_provider_type",
+            help_text="Ignored for two-pass.",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-key": "bookrag_image_description"},
+            options=[
+                {"value": "", "label": "(not used for twopass)"},
+                {"value": "anthropic", "label": "Anthropic"},
+                {"value": "bedrock", "label": "Bedrock"},
+                {"value": "openai", "label": "OpenAI"},
+                {"value": "azure_openai", "label": "Azure OpenAI"},
+                {"value": "vertexai", "label": "Vertex AI"},
+            ],
+            wrapper_class="field doc-field-medium",
+        ),
+        "multi_format_bookrag_image_description_model": _select_field(
+            "multi_format_bookrag_image_description_model",
+            "Model",
+            "multi_format_bookrag_image_description_model",
+            help_text="Ignored for two-pass.",
+            wrapper_attrs=bookrag_enrichment_route_attrs,
+            input_attrs={"data-provider-model-target": "bookrag_image_description"},
+            options=[],
+            option_groups=image_description_model_groups,
+            wrapper_class="field doc-field-xxl",
         ),
         "multi_format_bookrag_ner_subtype": _select_field(
             "multi_format_bookrag_ner_subtype",
@@ -774,6 +889,7 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
                 {"value": "", "label": "(infer from subtype/model)"},
                 {"value": "anthropic", "label": "Anthropic"},
                 {"value": "openai", "label": "OpenAI"},
+                {"value": "azure_openai", "label": "Azure OpenAI"},
             ],
             wrapper_class="field doc-field-medium",
         ),
@@ -831,9 +947,11 @@ def _build_multi_format_field_map() -> dict[str, dict[str, object]]:
         },
         "multi_format_bookrag_coordinates": {
             "name": "multi_format_bookrag_coordinates",
-            "label": "bookrag_coordinates",
+            "label": "Coordinates",
             "kind": "select",
             "default": str(defaults.get("multi_format_bookrag_coordinates", "true")),
+            "help": "Include element coordinates for High Res.",
+            "wrapper_attrs": bookrag_partition_hi_res_attrs,
             "options": [
                 {"value": "true", "label": "true"},
                 {"value": "false", "label": "false"},
@@ -896,12 +1014,20 @@ def build_multi_format_bookrag_ui_fields() -> list[dict[str, object]]:
         "multi_format_bookrag_extract_image_block_types",
         "multi_format_bookrag_enable_generative_ocr",
         "multi_format_bookrag_generative_ocr_subtype",
+        "multi_format_bookrag_generative_ocr_provider_type",
+        "multi_format_bookrag_generative_ocr_model",
         "multi_format_bookrag_enable_table_to_html",
         "multi_format_bookrag_table_to_html_subtype",
+        "multi_format_bookrag_table_to_html_provider_type",
+        "multi_format_bookrag_table_to_html_model",
         "multi_format_bookrag_enable_table_description",
         "multi_format_bookrag_table_description_subtype",
+        "multi_format_bookrag_table_description_provider_type",
+        "multi_format_bookrag_table_description_model",
         "multi_format_bookrag_enable_image_description",
         "multi_format_bookrag_image_description_subtype",
+        "multi_format_bookrag_image_description_provider_type",
+        "multi_format_bookrag_image_description_model",
         "multi_format_bookrag_enable_ner",
         "multi_format_bookrag_ner_subtype",
         "multi_format_bookrag_ner_provider_type",

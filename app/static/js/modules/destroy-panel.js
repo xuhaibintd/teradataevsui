@@ -10,7 +10,7 @@
       const destroyForm = triggerButton ? triggerButton.closest("form") : null;
       const modal = panel.querySelector("[data-destroy-confirm]");
       const modalName = panel.querySelector("[data-confirm-vs-name]");
-      const selectedName = panel.querySelector("[data-destroy-selected-name]");
+      const nameInput = destroyForm ? destroyForm.querySelector("[data-destroy-vs-input]") : null;
       const cancelButtons = panel.querySelectorAll("[data-confirm-cancel]");
       const okButton = panel.querySelector("[data-confirm-ok]");
       if (!(triggerButton instanceof HTMLButtonElement) || !(destroyForm instanceof HTMLFormElement) || !(modal instanceof HTMLElement)) {
@@ -26,7 +26,7 @@
         document.body.classList.remove("confirm-open");
       };
 
-      const currentVsName = () => (selectedName && selectedName.textContent ? selectedName.textContent : "").trim() || "(none)";
+      const currentVsName = () => (nameInput instanceof HTMLInputElement ? nameInput.value : "").trim();
 
       const openModal = () => {
         const name = currentVsName();
@@ -57,6 +57,10 @@
         okButton.addEventListener("click", () => {
           const name = currentVsName();
           closeModal();
+          if (!name) {
+            app.setTopMessage("Select a vector store before deleting.", "warn");
+            return;
+          }
           app.setTopMessage(`Deleting '${name}'...`, "info");
           if (typeof destroyForm.requestSubmit === "function") {
             destroyForm.requestSubmit(triggerButton);

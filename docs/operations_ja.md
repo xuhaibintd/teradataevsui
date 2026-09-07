@@ -1,7 +1,9 @@
 # teradataevsui 運用ガイド
 
 > **言語:** [English](operations.md) | 日本語
-<!-- Source-SHA256: bd9f17aa9e482856e4906eb100f294f06a9ba97d2d8b1eebba7d9d06beac0218 -->
+<!-- Source-SHA256: c20a33740227ab01ae80a30458eb7037415893626a0882a26c370e0d2a12d56c -->
+
+Windows、Linux、または Docker Compose への新規デプロイでは、[初回インストールガイド](installation_ja.md) から始めてください。本書はインストール後の継続運用と復旧を扱います。
 
 ## ローカル開発
 
@@ -79,4 +81,4 @@ Vector Store の準備完了状態は、`EVS_VECTORSTORE_READY_POLL_SECONDS`（�
 - 外部 API は必要な場合にのみ、`EVSUI_EXTERNAL_API_ENABLED=true` と強力な `EVSUI_API_TOKEN` を設定して有効化してください。
 - オンラインデータベースバックアップをスケジュールし、クリーンアップを有効にする前にアーティファクトのドライランインベントリを実行してください。
 
-`compose.yaml` は 1 つのアプリケーションサービスを起動します。その HTTP サーバーとバックグラウンドジョブランナーは、同じ SQLite リポジトリ、認証情報ボールト、アーティファクトライフサイクル、および Teradata ランタイムロックを共有します。
+`compose.yaml` は 1 つのアプリケーションサービスを起動します。その HTTP サーバーとバックグラウンドジョブランナーは、同じ SQLite リポジトリ、認証情報ボールト、アーティファクトライフサイクル、および Teradata ランタイムロックを共有します。Compose の既定では二つの bootstrap 変数を空にし、新規デプロイで一回限りのブラウザー設定を開きます。無人初期化の場合だけ、両方の変数を明示的に設定します。

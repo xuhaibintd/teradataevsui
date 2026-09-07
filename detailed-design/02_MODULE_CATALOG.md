@@ -54,6 +54,7 @@ HTTP / CLI エントリーポイント
 | `app/core/settings.py` | 環境変数、既定値、型変換、起動前検証 | 設定名、型、既定値、必須条件を `03_CONFIGURATION_AND_STARTUP.md` と同期する | `test_settings.py` |
 | `app/core/security.py` | CSRF、同一生成元判定、セキュリティヘッダー、秘密値の再帰的秘匿 | 失敗時にも秘密値を返さず、安全な GET を破壊しない | `test_security.py` |
 | `app/core/errors.py` | 共通 HTTP 例外処理と要求 ID の関連付け | 本番応答へスタックトレースを出さない | `test_security.py`、ルーターテスト |
+| `app/core/access_logging.py` | Uvicorn access log の低価値な成功 job poll を除外 | 失敗応答と状態変更要求の access log を保持する | `test_access_logging.py` |
 | `app/core/runtime_manager.py` | プロセス共有 Teradata コンテキストの排他制御と要求境界の後始末 | 共有 SDK 状態を同時要求間で混線させない | `test_runtime_manager.py` |
 | `app/core/single_instance.py` | 同一制御 DB に対する単一プロセスロック | ロック取得失敗を明示し、多重起動を許容しない | 起動試験 |
 | `app/core/form_fields.py` | 作成フォーム文字列の上限取得と検証 | ルーターごとに異なる上限ロジックを作らない | `test_create_field_limits.py` |
@@ -87,7 +88,7 @@ HTTP / CLI エントリーポイント
 
 | モジュール | 経路群 | 責務 | サービスへの委譲先 | 主な試験 |
 |---|---|---|---|---|
-| `app/routers/auth.py` | ログイン、ログアウト | 入力、認証結果、Cookie 遷移 | AuthStore、SessionRepository | `test_auth_store.py`、ブラウザー試験 |
+| `app/routers/auth.py` | 初回管理者設定、ログイン、ログアウト | 初期化状態、入力、認証結果、Cookie 遷移 | AuthStore、SessionRepository | `test_auth_store.py`、`test_user_admin.py`、ブラウザー試験 |
 | `app/routers/system_admin.py` | System Configuration、接続プロファイル、Unstructured、ユーザー管理 | 管理者認可、フォーム検証、PRG 応答 | AuthStore、CredentialVault | `test_user_admin.py`、`test_browser_actions.py` |
 | `app/routers/web.py` | 接続、管理、作成、検索、BookRAG 統制、JSON Inspector | Web 操作の受付、サービス調停、部分 HTML 応答 | workflows、vector_management、BookRAG サービス | `test_action_routes.py`、`test_browser_actions.py`、各機能試験 |
 | `app/routers/jobs.py` | ジョブ登録、状態取得、中断 | 所有者認可、秘密 payload 分離、進行表示 | JobRepository、ApplicationJobRunner | `test_background_jobs.py`、`test_jobs_and_artifacts.py` |
@@ -158,7 +159,7 @@ HTTP / CLI エントリーポイント
 | `app/services/doc_modes/multi_format_mode.py` | Multi-Format の段階処理、作成連携、状態メッセージ | 正式実装 |
 | `app/services/doc_modes/multi_format_bookrag_mode.py` | Multi-Format BookRAG の段階処理、作成連携、状態更新 | 正式実装 |
 | `app/services/doc_modes/constants.py` | モード間で共有する入力名、上限、フォーム値収集 | 共通契約 |
-| `app/services/doc_modes/ui_fields.py` | モード別設定フィールドのメタデータ | UI 契約 |
+| `app/services/doc_modes/ui_fields.py` | モード別設定フィールドのメタデータ、配布モデルカタログと非公開上書きのマージ | UI 契約、Unstructured モデル契約 |
 | `app/services/doc_modes/messages.py` | 完了情報の文言組立て | 表示補助 |
 | `app/services/doc_modes/common.py` | モード共通 UI 情報 | 共通補助 |
 | `app/services/doc_modes/multi_format.py` | 旧 Multi-Format adapter | 非活動候補 |

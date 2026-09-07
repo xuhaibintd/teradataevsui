@@ -17,6 +17,13 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8010
 
 プロジェクト directory を移動・改名した場合、editable install と launcher の絶対 path を避けるため virtual environment を再作成し、locked sync を行う。runtime DB、credential key、uploads を削除しない。
 
+公開する初回インストール手順は、Windows PowerShell と Linux x86-64 のそれぞれについて、Git clone、固定版 uv、Python 3.11、locked sync、初回管理者、開発起動、本番相当起動、health 確認を一続きで示す。
+
+- `OPS-INSTALL-001`：新規利用者が空のマシンから README と初回インストールガイドだけで起動できる手順を維持する。
+- `OPS-INSTALL-002`：ネイティブ起動と Docker Compose を分け、Windows と Linux の shell 差を明示する。
+- `OPS-INSTALL-003`：本番例は `--reload` を使わず、`WEB_CONCURRENCY=1`、永続 DB、明示 credential key、HTTPS 境界を要求する。
+- `OPS-INSTALL-004`：`.env` は Compose だけが自動読込することを明示し、ネイティブ起動で暗黙に読まれると説明しない。
+
 ## 3. 依存方針
 
 | 区分 | 正本 |
@@ -64,7 +71,9 @@ backup destination は source と別で未存在の path とする。定期 back
 
 multi-stage build で locked production dependency を作り、runtime image へ `.venv` と `app`、LICENSE だけをコピーする。非 root user `teradataevsui`、port 8010、1 worker で実行する。
 
-永続 volume は `data`、`uploads`、`pem_runtime` とする。Credential key と bootstrap password は compose の環境変数で必須化する。healthcheck は `/healthz` を使用する。
+永続 volume は `data`、`uploads`、`pem_runtime` とする。Credential key は compose の必須環境変数とする。bootstrap username/password の既定は両方空としブラウザー初回設定を使用する。無人初期化の場合だけ両方を明示する。healthcheck は `/healthz` を使用する。
+
+- `OPS-INSTALL-005`：`.env.example` と Compose に初期 username/password を埋め込まず、空の既定で `/setup` を利用可能にする。
 
 ## 7. Health と監視
 
@@ -83,6 +92,8 @@ multi-stage build で locked production dependency を作り、runtime image へ
 ## 8. ログ
 
 標準出力へ構造が分かる operation、request ID、job ID、result を記録する。秘密値と文書本文を記録しない。開発 debug log を本番既定にしない。error の利用者表示と内部 trace を request ID で対応させる。
+
+- `OPS-LOG-001`：ブラウザーが定常的に行う成功した job status poll は access log へ出力しない。認証・認可・not found・server error、および POST 等の状態変更要求は調査可能なよう保持する。
 
 ## 9. Backup と復旧
 

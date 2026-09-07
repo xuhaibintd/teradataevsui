@@ -1,22 +1,11 @@
 {% set metadata_admin = document_metadata_admin|default({}) %}
 {% set can_edit = metadata_admin.can_manage_governance|default(true) %}
+{% set operation_status = metadata_admin.status|default(none) %}
+{% include "partials/operation_status_oob.html" %}
 <div
   id="document-metadata-admin"
   class="document-metadata-admin"
-  {% if metadata_admin.auto_refresh %}
-  hx-get="/ui/admin/document-metadata?refresh=true"
-  hx-trigger="load"
-  hx-target="this"
-  hx-swap="outerHTML"
-  {% endif %}
 >
-  {% if metadata_admin.status %}
-  <div class="admin-rule-status {{ metadata_admin.status.kind }}" role="status" aria-live="polite">
-    <strong>{{ metadata_admin.status.title }}</strong>
-    <span>{{ metadata_admin.status.detail }}</span>
-  </div>
-  {% endif %}
-
   <section class="admin-rule-card">
     <div class="admin-rule-card-head">
       <div>
@@ -24,25 +13,6 @@
         <p class="muted">Publication date governance for bdoc and the retrieval view</p>
       </div>
     </div>
-    <form class="document-relation-toolbar" hx-get="/ui/admin/document-metadata" hx-target="#document-metadata-admin" hx-swap="outerHTML">
-      <label class="field">
-        <span>Vector Store</span>
-        <select name="vector_store_name" required>
-          <option value="">Select a Vector Store</option>
-          {% for name in metadata_admin.vector_store_options|default([]) %}
-          <option value="{{ name }}" {% if name == metadata_admin.selected_vector_store %}selected{% endif %}>{{ name }}</option>
-          {% endfor %}
-          {% if metadata_admin.selected_vector_store and metadata_admin.selected_vector_store not in metadata_admin.vector_store_options|default([]) %}
-          <option value="{{ metadata_admin.selected_vector_store }}" selected>{{ metadata_admin.selected_vector_store }}</option>
-          {% endif %}
-        </select>
-      </label>
-      <button type="submit" class="wizard-btn">Load</button>
-      <button type="submit" name="refresh" value="true" formnovalidate class="ghost wizard-btn">Refresh Vector Stores</button>
-    </form>
-    {% if not metadata_admin.vector_store_options|default([]) %}
-    <p class="muted">Refresh Vector Stores to retrieve the available stores, then select one and load its documents.</p>
-    {% endif %}
     {% if metadata_admin.selected_vector_store and metadata_admin.documents|default([]) %}
     <div class="document-relation-import-export">
       {% if can_edit %}
@@ -124,7 +94,7 @@
       </table>
     </div>
     {% else %}
-    <p class="muted">Select a Vector Store to load document metadata.</p>
+    <p class="muted">{% if metadata_admin.selected_vector_store %}No documents found in the selected Vector Store.{% else %}Select a Vector Store above and load its governance data.{% endif %}</p>
     {% endif %}
   </section>
 </div>

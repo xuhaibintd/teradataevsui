@@ -32,6 +32,7 @@
 | `13_UI_DESIGN.md` | UI、画面状態、メッセージ、レスポンシブ、ブラウザーテスト |
 | `14_TEST_AND_QUALITY.md` | テスト層、CI、回帰、公開検査、完了条件 |
 | `15_OPERATIONS_AND_DELIVERY.md` | CLI、Docker、依存管理、監視、バックアップ、公開物 |
+| `16_UNSTRUCTURED_IO_API.md` | Unstructured 設定、モデル、Workflow DAG、Jobs API、成果物、失敗処理 |
 
 ## 3. 読み方
 

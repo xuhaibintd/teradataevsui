@@ -1,0 +1,46 @@
+{% set governance_admin = document_governance_admin|default({}) %}
+{% set operation_status = governance_admin.status|default(none) %}
+{% include "partials/operation_status_oob.html" %}
+<div id="document-governance-admin" class="document-relation-admin">
+  <section class="admin-rule-card">
+    <div class="admin-rule-card-head">
+      <div>
+        <h4>Governance Vector Store</h4>
+        <p class="muted">Metadata and relationships are loaded from the same Vector Store.</p>
+      </div>
+    </div>
+    <form
+      class="document-relation-toolbar"
+      hx-get="/ui/admin/document-governance"
+      hx-target="#document-governance-admin"
+      hx-swap="outerHTML"
+    >
+      <label class="field">
+        <span>Vector Store</span>
+        <select name="vector_store_name" required>
+          <option value="">Select a Vector Store</option>
+          {% for name in governance_admin.vector_store_options|default([]) %}
+          <option value="{{ name }}" {% if name == governance_admin.selected_vector_store %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+          {% if governance_admin.selected_vector_store and governance_admin.selected_vector_store not in governance_admin.vector_store_options|default([]) %}
+          <option value="{{ governance_admin.selected_vector_store }}" selected>{{ governance_admin.selected_vector_store }}</option>
+          {% endif %}
+        </select>
+      </label>
+      <button type="submit" class="wizard-btn">Load</button>
+      <button
+        type="button"
+        class="ghost wizard-btn"
+        hx-get="/ui/admin/document-governance?refresh=true"
+        hx-target="#document-governance-admin"
+        hx-swap="outerHTML"
+      >Refresh Vector Stores</button>
+    </form>
+    {% if not governance_admin.vector_store_options|default([]) %}
+    <p class="muted">Refresh Vector Stores to retrieve the available stores, then select one and load its governance data.</p>
+    {% endif %}
+  </section>
+
+  {% include "partials/document_metadata_admin.html" %}
+  {% include "partials/document_relation_admin.html" %}
+</div>

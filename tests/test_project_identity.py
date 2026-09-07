@@ -43,6 +43,30 @@ class ProjectIdentityTests(unittest.TestCase):
         self.assertEqual(settings.credential_key_file, ROOT / "data/evsui.credentials.key")
         self.assertEqual(SESSION_COOKIE_NAME, "evsui_sid")
 
+    def test_fresh_install_examples_default_to_browser_admin_setup(self):
+        env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+        compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+
+        self.assertRegex(env_example, r"(?m)^EVSUI_BOOTSTRAP_ADMIN=$")
+        self.assertRegex(env_example, r"(?m)^EVSUI_BOOTSTRAP_PASSWORD=$")
+        self.assertIn('EVSUI_BOOTSTRAP_ADMIN: "${EVSUI_BOOTSTRAP_ADMIN:-}"', compose)
+        self.assertIn('EVSUI_BOOTSTRAP_PASSWORD: "${EVSUI_BOOTSTRAP_PASSWORD:-}"', compose)
+        self.assertNotIn("EVSUI_BOOTSTRAP_ADMIN:-admin", compose)
+        self.assertNotIn("EVSUI_BOOTSTRAP_PASSWORD:?", compose)
+        installation = (ROOT / "docs" / "installation.md").read_text(encoding="utf-8")
+        installation_ja = (ROOT / "docs" / "installation_ja.md").read_text(encoding="utf-8")
+        for required in (
+            "## 2. Windows PowerShell installation",
+            "## 3. Linux x86-64 installation",
+            "uv python install 3.11",
+            "uv sync --locked --no-dev",
+            "## 5. Docker Compose installation",
+            "There is no initial or default password.",
+        ):
+            self.assertIn(required, installation)
+        self.assertIn("## 2. Windows PowerShell でのインストール", installation_ja)
+        self.assertIn("## 3. Linux x86-64 でのインストール", installation_ja)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -81,7 +81,7 @@
   <div class="multi-format-section stack">
     <div class="multi-format-section-head">
       <h4>3. Enrichment Nodes</h4>
-      <p class="multi-format-section-copy">NER supports explicit provider/model selection. The other enrichment nodes currently use subtype-only configuration for Unstructured on-demand workflows.</p>
+      <p class="multi-format-section-copy">Each model-backed node sends its selected provider and model to Unstructured. Two-pass nodes use platform-managed models and omit those settings.</p>
     </div>
     <div class="multi-format-enrichment-stack">
       <article class="multi-format-enrichment-card" data-enrichment-card="bookrag_generative_ocr" data-bookrag-partition-routes="auto hi_res">
@@ -97,6 +97,8 @@
           </div>
           <div class="multi-format-enrichment-config" data-enrichment-panel-for="bookrag_generative_ocr">
             {{ fields.render_field(mf.map['multi_format_bookrag_generative_ocr_subtype'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_generative_ocr_provider_type'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_generative_ocr_model'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
           </div>
         </div>
       </article>
@@ -114,6 +116,8 @@
           </div>
           <div class="multi-format-enrichment-config" data-enrichment-panel-for="bookrag_image_description">
             {{ fields.render_field(mf.map['multi_format_bookrag_image_description_subtype'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_image_description_provider_type'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_image_description_model'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
           </div>
         </div>
       </article>
@@ -131,6 +135,8 @@
           </div>
           <div class="multi-format-enrichment-config" data-enrichment-panel-for="bookrag_table_description">
             {{ fields.render_field(mf.map['multi_format_bookrag_table_description_subtype'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_table_description_provider_type'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_table_description_model'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
           </div>
         </div>
       </article>
@@ -148,6 +154,8 @@
           </div>
           <div class="multi-format-enrichment-config" data-enrichment-panel-for="bookrag_table_to_html">
             {{ fields.render_field(mf.map['multi_format_bookrag_table_to_html_subtype'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_table_to_html_provider_type'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
+            {{ fields.render_field(mf.map['multi_format_bookrag_table_to_html_model'], create_values, evs.connected, doc_mode_enabled, _doc_pipeline_mode) }}
           </div>
         </div>
       </article>

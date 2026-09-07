@@ -7,7 +7,7 @@
 状態：規範文書
 
 対象：設計者、開発者、テスター、コードレビュー担当者、AI コーディングエージェント
-最終更新日：2026-09-05
+最終更新日：2026-09-07
 
 ## 1. この文書の目的
 
@@ -83,6 +83,9 @@ System Configuration /admin/users
 ├─ Database Connections
 ├─ Unstructured IO
 └─ User Management
+
+初回設定 /setup（users が 0 件の場合だけ）
+└─ Create administrator
 ```
 
 ### 4.2 画面責務
@@ -108,6 +111,17 @@ System Configuration /admin/users
 | ユーザー管理 | 可 | 不可 | 不可 |
 
 権限制御は画面上の非表示または無効化だけに依存してはならない。サーバー側でも同じ権限を必ず検証する。
+
+### 4.4 初回管理者設定
+
+- `UI-SETUP-001`：ユーザーが 0 件の場合、未ログイン利用者を通常 login ではなく `/setup` へ自動誘導する。
+- `UI-SETUP-002`：画面は `Create administrator`、短い説明、Username、Password、Confirm password、作成ボタンだけを持つ。
+- `UI-SETUP-003`：password は 8 文字以上とし、確認不一致を含む入力エラーは同じフォームで明示する。password 値は再表示しない。
+- `UI-SETUP-004`：作成成功後は login へ移動し、一件の短い成功メッセージを表示する。初回設定入口は直ちに無効になる。
+- `UI-SETUP-005`：既存ユーザーがいる状態で `/setup` を開いても初期化フォームを表示せず、login へ戻す。
+- `UI-SETUP-006`：初回設定と login はアプリケーション用 HTMX/JavaScript を読み込まず、通常の HTML form とブラウザー検証で動作する。
+
+未認証画面は共通トップメッセージ領域を持たないため、この二画面の入力エラーと初回作成完了だけは認証パネル内へ一度だけ表示できる。
 
 ## 5. 共通レイアウト
 
@@ -282,6 +296,9 @@ System Configuration /admin/users
 - BookRAG 作成では `unstructured_bookrag_flg` 相当の識別情報を、後で管理一覧から確実に判定できる形で保持する。
 - 必須値不足は送信前とサーバー側の両方で検証する。
 - ブラウザー標準の検証だけに依存せず、どの項目が不足しているかを明示する。
+- `UI-MODEL-001`：Unstructured の provider/model 候補は版管理されたモデルカタログから表示し、provider 選択時は対応する model だけを残す。VLM の空選択は platform default を意味し、文書ページの実行時スクレイピングは行わない。
+- `UI-MODEL-002`：Multi-Format と BookRAG の model-backed enrichment は subtype、provider、model を同じカードで選択し、選択値を API へそのまま渡す。two-pass subtype だけは platform-managed model として provider/model を送信しない。
+- `UI-MODEL-003`：Coordinates と block extraction は High Res のときだけ有効化する。Generative OCR の自動 block extraction は text element type を含める。
 
 ### 8.4 長時間処理
 
@@ -290,6 +307,7 @@ System Configuration /admin/users
 - ジョブ進捗は対象パネル内、ジョブ受付・完了・失敗の主要通知はトップへ表示する。
 - 再読み込みや再接続後にも必要なジョブ状態を復元できること。
 - 単一プロセスの Teradata ランタイム制約を守り、UI 上で不可能な並列実行を期待させない。
+- `UI-CREATE-CSV-001`：Generate CSV の送信時に、同一 database と Vector Store 名の load 済み run が見つかった場合は job を作らず、対象名を変更するよう CSV 結果領域へ一件の入力競合エラーを表示する。既存 CSV、table、Vector Store を上書きまたは暗黙再利用しない。
 
 ## 9. `Vector Store Retrieval` 詳細設計
 
@@ -330,9 +348,10 @@ BookRAG Governance は次の 2 タブだけを持つ。
 ### 10.2 Document Governance
 
 - 対象 Vector Store は BookRAG と判定できるものだけを候補にする。
+- `UI-GOVERNANCE-001`：`Document Governance` は Vector Store 選択、`Load`、`Refresh Vector Stores` を上部に一組だけ持ち、`Document Metadata` と `Document Relationships` は常に同じ選択中 Vector Store を使用する。
 - `Document Metadata` は発行日、精度、シリーズ、役割、論理文書キー、改訂番号、状態を扱う。
 - `Document Relationships` は From、Relationship、To、Description、Source、Actions を扱う。
-- `Load` と `Refresh Vector Stores` は別操作とする。
+- `Load` は選択中 Vector Store の両領域を同時に読み込み、`Refresh Vector Stores` は候補一覧だけを更新する別操作とする。
 - CSV の Import、Export、初期化、保存、更新、削除は権限を明示し、不可逆操作には確認を付ける。
 - 一覧またはテーブルが未初期化の場合は、空白ではなく状態と必要な次操作を示す。
 
@@ -514,6 +533,7 @@ BookRAG Governance は次の 2 タブだけを持つ。
 | Vector Store 作成 | `app/templates/partials/create_panel.html`、`app/templates/partials/create_doc_modes/` |
 | Retrieval | `app/templates/partials/chat_panel.html`、`app/static/js/modules/chat-retrieval.js` |
 | BookRAG Governance | `app/templates/partials/bookrag_admin_panel.html` と関連 partial |
+| 初回管理者設定 | `app/templates/setup.html`、`app/routers/auth.py`、`app/auth_store.py` |
 | System Configuration | `app/templates/user_admin.html`、`app/routers/system_admin.py` |
 | レイアウトとトークン | `app/static/css/modules/tokens.css`、`base.css`、`layout.css`、`responsive.css` |
 | 管理画面 CSS | `app/static/css/modules/connect.css`、`admin.css` |
@@ -536,6 +556,7 @@ BookRAG Governance は次の 2 タブだけを持つ。
 - 未接続時に接続依存操作が無効化される。
 - `admin`、`operator`、`viewer` の表示とサーバー認可が一致する。
 - System Configuration の 3 タブが正しい内容だけを表示する。
+- ユーザー 0 件で初回設定へ誘導し、作成成功、確認不一致、短い password、作成済み再アクセスを検証する。
 - シークレットがレスポンス HTML に含まれない。
 - `900px`、`1100px`、標準デスクトップ幅で横方向のページあふれがない。
 
@@ -552,6 +573,7 @@ BookRAG Governance は次の 2 タブだけを持つ。
 9. 処理中の Vector Store を削除して `409` を発生させ、トップに一件だけ安全なエラーが出てレイアウトと選択が維持されることを確認する。
 10. 作成、検索、BookRAG Governance、System Configuration の主要成功と失敗を一回ずつ確認する。
 11. デスクトップ、狭いノート PC、タブレット、モバイル幅のスクリーンショットを比較する。
+12. 空のユーザー DB で初回管理者を作成し、入力失敗時の非保存、作成後の setup 閉鎖、通常 login を確認する。
 
 ### 20.3 視覚確認項目
 

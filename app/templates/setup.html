@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="login-wrap">
+  <article class="panel login-panel">
+    <div class="login-header">
+      <h2>Create administrator</h2>
+      <p class="muted">First-time setup. Create the account used to configure and manage this system.</p>
+    </div>
+    {% if error %}
+    <p class="status err">{{ error }}</p>
+    {% endif %}
+    <form class="stack" method="post" action="/setup" autocomplete="on">
+      <label class="field">
+        <span>Username</span>
+        <input type="text" name="username" value="{{ username }}" placeholder="admin" autocomplete="username" maxlength="128" pattern="[A-Za-z0-9_.@-]+" required autofocus />
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" value="" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required />
+      </label>
+      <label class="field">
+        <span>Confirm password</span>
+        <input type="password" name="confirm_password" value="" placeholder="Enter the password again" autocomplete="new-password" minlength="8" required />
+      </label>
+      <button type="submit" class="login-btn">Create administrator</button>
+    </form>
+  </article>
+</section>
+{% endblock %}

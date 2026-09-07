@@ -75,10 +75,12 @@ HTTP の Teradata 操作とアプリ内ジョブ実行器は同じ `TeradataRunt
 2. FastAPI、エラーハンドラー、ミドルウェア、静的資産の構成
 3. SQLite マイグレーション
 4. CredentialVault、AuthStore、各 Repository の生成
-5. 初期管理者、旧設定、Unstructured 設定、接続プロファイルの移行
+5. 環境変数または旧設定による初期管理者 bootstrap、Unstructured 設定、接続プロファイルの移行
 6. セッション状態とサービスの登録
 7. 単一インスタンスロック取得
 8. 中断ジョブの復旧と ApplicationJobRunner 開始
+
+bootstrap 後もユーザーが 0 件の場合は起動を継続し、最初のブラウザーアクセスを一回限りの `/setup` へ誘導する。
 
 停止時は新しいジョブ取得を止め、現在のジョブ実行ループを終了させ、SDK とファイルハンドルを解放する。外部処理を強制終了したと仮定してはならない。
 
@@ -86,6 +88,7 @@ HTTP の Teradata 操作とアプリ内ジョブ実行器は同じ `TeradataRunt
 
 | ユースケース | 配信入口 | オーケストレーション | 主な外部状態 |
 |---|---|---|---|
+| 初回管理者設定 | `routers/auth.py` | `AuthStore.create_initial_admin` | SQLite user/audit |
 | ログイン | `routers/auth.py` | `AuthStore` | SQLite session |
 | Teradata 接続 | `routers/web.py` | runtime helper | Teradata context |
 | Vector Store 管理 | `routers/web.py` | `vector_management`、`destroy_flow` | EVS |

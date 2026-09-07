@@ -197,6 +197,32 @@ class AuthStore:
             )
         return AuthPrincipal(user_id, clean_username, str(display_name).strip(), clean_role, bool(enabled))
 
+    def create_initial_admin(self, *, username: str, password: str) -> AuthPrincipal:
+        """Create the one-time initial administrator while the user table is empty."""
+        clean_username = _clean_username(username)
+        encoded_password = hash_password(password)
+        now = int(time.time())
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT COUNT(*) AS value FROM users").fetchone()
+            if int(row["value"] if row else 0) != 0:
+                raise RuntimeError("Initial administrator is already configured.")
+            cursor = connection.execute(
+                """INSERT INTO users(username, display_name, password_hash, role, enabled, created_at, updated_at)
+                   VALUES(?, '', ?, 'admin', 1, ?, ?)""",
+                (clean_username, encoded_password, now, now),
+            )
+            user_id = int(cursor.lastrowid)
+            self._audit_with_connection(
+                connection,
+                user_id=user_id,
+                username=clean_username,
+                action="user.initial_admin",
+                resource=clean_username,
+                result="ok",
+            )
+        return AuthPrincipal(user_id, clean_username, "", "admin", True)
+
     def bootstrap(self, legacy_users: dict[str, str] | None = None) -> int:
         if self.count_users():
             return 0

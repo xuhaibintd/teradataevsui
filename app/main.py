@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app.core.access_logging import configure_uvicorn_access_logging
 from app.core.errors import configure_error_handlers
 from app.core.runtime_manager import RuntimeIsolationMiddleware
 from app.core.security import SecurityMiddleware
@@ -44,6 +45,7 @@ def _build_job_runner(application: FastAPI, settings: Settings) -> ApplicationJo
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or Settings.from_env()
     resolved_settings.validate_runtime()
+    configure_uvicorn_access_logging()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):

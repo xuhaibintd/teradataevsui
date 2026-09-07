@@ -27,8 +27,8 @@
 | `EVSUI_DATABASE_PATH` | `data/evsui.db` | SQLite 正本 |
 | `EVSUI_CREDENTIAL_KEY` | 空 | Fernet キー。設定時はファイルより優先 |
 | `EVSUI_CREDENTIAL_KEY_FILE` | DB 隣接 | キーファイルの明示位置 |
-| `EVSUI_BOOTSTRAP_ADMIN` | 空 | 初回管理者。password と同時指定 |
-| `EVSUI_BOOTSTRAP_PASSWORD` | 空 | 8 文字以上 |
+| `EVSUI_BOOTSTRAP_ADMIN` | 空 | 無人初期化用の初回管理者。password と同時指定 |
+| `EVSUI_BOOTSTRAP_PASSWORD` | 空 | 無人初期化用。8 文字以上 |
 | `EVSUI_SESSION_TTL_SECONDS` | `28800` | 300 秒以上 |
 | `EVSUI_EXTERNAL_API_ENABLED` | token 有無 | 外部 BookRAG API の有効化 |
 | `EVSUI_API_TOKEN` | 空 | 外部 API 有効時に必須 |
@@ -47,7 +47,7 @@
 - `EVSUI_ENVIRONMENT=production`
 - `WEB_CONCURRENCY=1`
 - 事前作成した `EVSUI_CREDENTIAL_KEY` または明示的な key file
-- 初回だけ有効な管理者 bootstrap 情報
+- 初回ブラウザー設定、または初回だけ有効な管理者 bootstrap 情報
 - 書込み可能で永続化された `data/` と `uploads/`
 - SDK に必要な場合、保護された `pem_runtime/`
 - TLS 終端と安全な外部公開設定
@@ -77,6 +77,10 @@ Settings.from_env
 - `START-003`：bootstrap は既存ユーザー、保存済みシークレット、接続プロファイルを上書きしない。
 - `START-004`：テスト環境ではバックグラウンド runner を自動開始しない。
 - `START-005`：アプリ起動失敗を握りつぶして部分稼働させない。
+- `START-006`：bootstrap 後にユーザーが 0 件なら、ログイン画面ではなく一回限りの初回管理者設定へ誘導する。
+- `START-007`：ユーザーが 1 件以上存在する場合、初回設定入口を無効化してログインへ戻す。
+- `START-008`：初回管理者作成は一つの SQLite write transaction で 0 件確認と insert を行い、同時要求から複数の初回管理者を作らない。
+- `START-009`：`.env.example` と Compose の既定では bootstrap username/password を空にし、対話型初回設定を妨げない。無人初期化では両方を同時に明示する。
 
 ## 6. パス設計
 

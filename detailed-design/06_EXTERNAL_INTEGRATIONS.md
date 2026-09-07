@@ -30,21 +30,35 @@ SDK object を session、SQLite、job payload、JSON response へ保存しない
 
 ## 3. Unstructured Platform
 
+共有設定から on-demand job、モデル、DAG、成果物までの正規フローは `16_UNSTRUCTURED_IO_API.md` を正本とする。本節は外部境界の要約を示す。
+
 ### 3.1 構成
 
 共有 `API URL` と暗号化 `API Key` を SQLite に保存する。job 実行時にだけ復号する。model/provider ごとの追加 secret は通常 payload と分離する。
+
+- `UNSTRUCTURED-API-001`：SDK は `unstructured-client==0.46.2` に固定し、Jobs API の `get_job_details`、`get_job_failed_files`、`download_job_output` をその版の型で使用する。
 
 ### 3.2 Workflow contract
 
 `validate_workflow_nodes()` は network 前に次を検証する。
 
 - node が一つ以上
-- partition node が厳密に一つ
-- subtype と strategy の許可組合せ
+- partition node が厳密に一つで先頭にあること
+- `vlm` subtype の Auto/VLM を boolean `is_dynamic` で区別し、旧 `strategy` を混在させないこと
+- `unstructured_api` subtype と `fast`、`hi_res`、`ocr_only` strategy の組合せ
 - settings が object
-- VLM partition と重複 enrichment の禁止
+- explicit VLM partition と別 image/table/OCR enrichment の禁止。NER は許可する
+- model-backed prompter の `provider_type` と `model`、subtype/provider 整合性
+- two-pass prompter が `provider_type` と `model` を送信しないこと
+- enrichment は chunk 前、NER は chunk 後という DAG 順序
 
 `unstructured_workflow_builder.py` は UI 値から Pipeline API request を組み立てる。provider 推論、model、chunk、OCR、table/image/NER の値を正規化し、未対応 node を生成しない。
+
+- `UNSTRUCTURED-MODEL-001`：`app/config/unstructured_models.example.json` を配布時モデルカタログの正本とし、公式モデル一覧 URL、schema version、確認日を保持する。
+- `UNSTRUCTURED-MODEL-002`：`app/config/unstructured_models.json` または `UNSTRUCTURED_MODEL_CATALOG_PATH` の非公開上書きは、機能および provider 単位で配布カタログへマージする。不正 JSON または存在しないファイルは配布カタログを破壊しない。
+- `UNSTRUCTURED-MODEL-003`：公開モデル一覧 API がない間は、アプリ起動時に文書ページをスクレイピングしない。公式文書を確認した版管理変更と契約試験で更新する。
+- `UNSTRUCTURED-MODEL-004`：同じ model ID を複数 provider が使用できる場合、明示された provider を model 名の接頭辞推論で上書きしない。
+- `UNSTRUCTURED-API-002`：利用者が指定した enrichment model は `settings.model`、provider は `settings.provider_type` として変更せず送信する。不整合は network 前に失敗させ、別 model へ黙って置換しない。
 
 ### 3.3 Job protocol
 
@@ -58,7 +72,7 @@ client create
   → element list extraction
 ```
 
-submit 間隔は既定 1.35 秒以上とし、rate limit 応答の retry-after を尊重する。poll timeout は job のリモート取消を意味しない。diagnostics は秘密を除いて保存する。
+submit 間隔は既定 1.35 秒以上とし、rate limit 応答の retry-after を尊重する。on-demand job は一ファイルずつ送信し、10 MB（10,000,000 bytes）を超えるファイルは network 前に拒否する。poll timeout は job のリモート取消を意味しない。diagnostics は秘密を除いて保存する。
 
 ### 3.4 応答保存
 

@@ -67,8 +67,11 @@ class FrontendParameterBrowserTests(unittest.TestCase):
         enrichment = form.locator("[data-enrichment-toggle='generative_ocr']")
         enrichment.select_option("true")
         expect(form.locator("[name='multi_format_generative_ocr_subtype']")).to_be_enabled()
+        expect(form.locator("[name='multi_format_generative_ocr_provider_type']")).to_have_value("openai")
+        expect(form.locator("[name='multi_format_generative_ocr_model']")).to_have_value("gpt-5-mini")
         enrichment.select_option("false")
         expect(form.locator("[name='multi_format_generative_ocr_subtype']")).to_be_disabled()
+        expect(form.locator("[name='multi_format_generative_ocr_model']")).to_be_disabled()
         for route in ("fast", "vlm", "auto"):
             strategy.select_option(route)
             self.assert_hidden_fields_disabled(form)
@@ -116,6 +119,7 @@ class FrontendParameterBrowserTests(unittest.TestCase):
         provider.select_option("openai")
         self.assertEqual(model.locator("optgroup").evaluate_all("groups => groups.map(group => group.label)"),
                          ["OpenAI"])
+        expect(model.locator("option[value='gpt-5.4-mini']")).to_have_count(1)
         selected = model.locator("optgroup option").first.get_attribute("value")
         model.select_option(selected)
         form.locator("[name='search_algorithm']").select_option("HNSW")
@@ -123,10 +127,24 @@ class FrontendParameterBrowserTests(unittest.TestCase):
         provider.select_option("anthropic")
         self.assertEqual(model.locator("optgroup").evaluate_all("groups => groups.map(group => group.label)"),
                          ["Anthropic"])
+        expect(model.locator("option[value='claude-sonnet-4-6']")).to_have_count(1)
         expect(model).to_have_value("")
         form.locator("[name='doc_pipeline_mode']").select_option("multi_format_bookrag")
         expect(provider).to_be_disabled()
         expect(model).to_be_disabled()
+        form.locator("[name='multi_format_bookrag_strategy']").select_option("hi_res")
+        form.locator("[data-enrichment-toggle='bookrag_image_description']").select_option("true")
+        bookrag_provider = form.locator("[data-provider-model-key='bookrag_image_description']")
+        bookrag_model = form.locator("[data-provider-model-target='bookrag_image_description']")
+        expect(bookrag_provider).to_be_enabled()
+        expect(bookrag_model).to_be_enabled()
+        bookrag_provider.select_option("openai")
+        self.assertEqual(
+            bookrag_model.locator("optgroup").evaluate_all("groups => groups.map(group => group.label)"),
+            ["OpenAI"],
+        )
+        expect(bookrag_model.locator("option[value='gpt-5.4-mini']")).to_have_count(1)
+        self.assert_hidden_fields_disabled(form)
         self.assertEqual(self.errors, [])
 
     def test_each_chunk_strategy_excludes_hidden_controls_from_form_payload(self):
@@ -233,6 +251,62 @@ class FrontendParameterBrowserTests(unittest.TestCase):
         self.assertEqual(self.fixture.app.state.job_repository.get(job_id)["status"], "cancelled")
         self.assertEqual(self.errors, [])
 
+    def test_loaded_csv_target_is_rejected_before_a_generation_job_is_queued(self):
+        from app.services import multi_format, workflow_jobs
+
+        self.login()
+        form = self.create_form()
+        form.locator("[name='doc_pipeline_mode']").select_option("multi_format_bookrag")
+        self.upload_document(form)
+        form.locator("[data-bookrag-csv-vector-store-name]").fill("browser_collision_target")
+        form.locator("[data-bookrag-csv-target-database]").fill("fixture")
+        form.locator("[data-bookrag-parse-button]").click()
+        parsing = self.page.locator("#bookrag-document-parsing-result")
+        expect(parsing).to_contain_text("Queued")
+        parse_summary = {
+            "status": "ok",
+            "parse_run_id": "browser_collision_parse",
+            "file_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "workers": 1,
+            "elapsed_seconds": 0.1,
+            "raw_stage_dir": str(self.fixture.uploads / "bookrag_raw_stage"),
+            "manifest_path": "",
+            "warnings": [],
+            "files": [],
+        }
+        self.complete_job(workflow_jobs.BOOKRAG_PARSE_JOB, {"summary": parse_summary})
+        expect(parsing).to_contain_text("Document parsing completed.")
+
+        csv_run_id = "browser_collision_loaded"
+        stage_dir = self.fixture.uploads / "bookrag_csv_stage" / csv_run_id
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        (stage_dir / "manifest.json").write_text(json.dumps({
+            "schema_version": multi_format.BOOKRAG_CSV_MANIFEST_SCHEMA_VERSION,
+            "artifact_type": "bookrag_csv_run",
+            "complete_table_contract": multi_format.BOOKRAG_COMPLETE_TABLE_CONTRACT,
+            "csv_run_id": csv_run_id,
+            "created_at": "2026-09-07T12:00:00",
+            "status": "ready",
+            "load_status": "ready",
+            "vector_store_status": "not_started",
+            "vector_store_name": "BROWSER_COLLISION_TARGET",
+            "target_database": "FIXTURE",
+            "file_count": 1,
+            "csv_file_count": 1,
+        }), encoding="utf-8")
+
+        job_count = len(self.fixture.app.state.job_repository.list_recent())
+        with self.page.expect_response(lambda response: response.url.endswith("/ui/create/generate-csv")) as blocked:
+            parsing.get_by_role("button", name="Generate CSV from this JSON run", exact=True).click()
+        self.assertEqual(blocked.value.status, 200)
+        generation = self.page.locator("#bookrag-csv-generation-result")
+        expect(generation).to_contain_text("already has loaded tables")
+        expect(generation).to_contain_text("Use a different Target Vector Store Name")
+        self.assertEqual(len(self.fixture.app.state.job_repository.list_recent()), job_count)
+        self.assertEqual(self.errors, [])
+
     def test_oversized_key_error_preserves_form_and_allows_corrected_resubmit(self):
         self.login()
         form = self.create_form()
@@ -263,15 +337,16 @@ class FrontendParameterBrowserTests(unittest.TestCase):
         for prefix, mode, stage_prefix in (("multi-format", "multi_format", "multi_format"),
                                            ("bookrag", "multi_format_bookrag", "bookrag")):
             with self.subTest(mode=mode):
+                target_name = f"browser_{stage_prefix}_store"
                 form.locator("[name='doc_pipeline_mode']").select_option(mode)
-                form.locator(f"[data-{prefix}-csv-vector-store-name]").fill("browser_stage_store")
+                form.locator(f"[data-{prefix}-csv-vector-store-name]").fill(target_name)
                 form.locator(f"[data-{prefix}-csv-target-database]").fill("fixture")
                 raw_id, csv_id = f"browser_{stage_prefix}_raw", f"browser_{stage_prefix}_csv"
                 stage_dir = self.fixture.uploads / f"{stage_prefix}_csv_stage" / csv_id
                 stage_dir.mkdir(parents=True, exist_ok=True)
                 summary = {
                     "status": "ready", "parse_run_id": raw_id, "csv_run_id": csv_id,
-                    "vector_store_name": "browser_stage_store", "target_database": "fixture",
+                    "vector_store_name": target_name, "target_database": "fixture",
                     "created_at": "2026-09-05T10:00:00", "file_count": 1, "success_count": 1,
                     "failure_count": 0, "workers": 1, "elapsed_seconds": 0.1, "files": [], "warnings": [],
                     "csv_files_created": 1, "csv_file_count": 1, "row_count": 3, "run_csv_files": [],

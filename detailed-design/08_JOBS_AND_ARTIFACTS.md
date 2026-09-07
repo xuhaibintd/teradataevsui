@@ -103,6 +103,10 @@ path 解決が root 外の場合は `blocked` とし、削除しない。file �
 
 同じ job を複数タブが poll しても状態を変更しない。terminal result rendering は session state へ必要な create result、upload、manifest status を一度反映しても冪等であること。
 
+- `JOB-UI-001`：JSON→CSV job は開始時を 10、文書変換の完了数を 10～90、変換後整理を 95、terminal success を 100 として heartbeat を更新する。
+- `JOB-UI-002`：成功した `GET /ui/jobs/{id}` は高頻度の定常 poll のため Uvicorn access log から除外する。非 200 応答、status 以外の path、状態変更要求は除外しない。
+- `JOB-UI-003`：JSON→CSV job の登録前に、同一 target database と Vector Store 名の load 済み run が存在しないことを確認する。競合時は job を登録せず、対象名の変更を求める。
+
 ## 12. 検証項目
 
 - 各 8 kind の登録、handler、結果を試験する。

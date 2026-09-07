@@ -16,19 +16,33 @@ from app.web_support import (
 router = APIRouter()
 
 
+def _initial_setup_required(request: Request) -> bool:
+    return request.app.state.auth_store.count_users() == 0
+
+
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(request: Request, setup: str = ""):
     if _is_logged_in(request, request.app):
         return RedirectResponse(url="/", status_code=303)
+    if _initial_setup_required(request):
+        return RedirectResponse(url="/setup", status_code=303)
     return request.app.state.templates.TemplateResponse(
         request,
         "login.html",
-        {"error": "", "logged_in": False, "username": "", "password": ""},
+        {
+            "error": "",
+            "success": "Administrator created. Sign in with the new account." if setup == "complete" else "",
+            "logged_in": False,
+            "username": "",
+            "password": "",
+        },
     )
 
 
 @router.post("/login", response_class=HTMLResponse)
 async def login_submit(request: Request, username: str = Form(default=""), password: str = Form(default="")):
+    if _initial_setup_required(request):
+        return RedirectResponse(url="/setup", status_code=303)
     clean_username = username.strip()
     principal = request.app.state.auth_store.authenticate(clean_username, password)
     if principal is not None:
@@ -62,6 +76,49 @@ async def login_submit(request: Request, username: str = Form(default=""), passw
             "username": clean_username,
             "password": "",
         },
+    )
+
+
+@router.get("/setup", response_class=HTMLResponse)
+async def initial_setup_page(request: Request):
+    if not _initial_setup_required(request):
+        return RedirectResponse(url="/login", status_code=303)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "setup.html",
+        {"error": "", "logged_in": False, "username": ""},
+    )
+
+
+@router.post("/setup", response_class=HTMLResponse)
+async def initial_setup_submit(
+    request: Request,
+    username: str = Form(default=""),
+    password: str = Form(default=""),
+    confirm_password: str = Form(default=""),
+):
+    if not _initial_setup_required(request):
+        return RedirectResponse(url="/login", status_code=303)
+    clean_username = username.strip()
+    if password != confirm_password:
+        error = "Passwords do not match."
+    else:
+        try:
+            request.app.state.auth_store.create_initial_admin(
+                username=clean_username,
+                password=password,
+            )
+        except ValueError as ex:
+            error = str(ex)
+        except RuntimeError:
+            return RedirectResponse(url="/login", status_code=303)
+        else:
+            return RedirectResponse(url="/login?setup=complete", status_code=303)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "setup.html",
+        {"error": error, "logged_in": False, "username": clean_username},
+        status_code=400,
     )
 
 

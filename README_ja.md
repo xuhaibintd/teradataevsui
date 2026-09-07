@@ -1,7 +1,7 @@
 # teradataevsui — Teradata Vector Store UI
 
 > **言語:** [English](README.md) | 日本語
-<!-- Source-SHA256: a02856f37a9380c1693eb0088d1e78f7a56cfce4997ecc4bdd84314df584cebc -->
+<!-- Source-SHA256: 5df160e69139b4f536e84eee273e74c87f375d43775bbd59fa794565f7f369a1 -->
 
 Teradata Vector Store は、Teradata データ上でベクトル検索・取得機能を提供します。ドキュメントのチャンクと埋め込みを管理対象の Vector Store として保存し、`VectorStore` と `VSManager` を通じて、作成、ヘルスチェック、一覧表示、削除、セマンティック類似検索、および根拠付き Q&A の操作を公開します。
 
@@ -35,6 +35,7 @@ teradataevsui は、Teradata Vector Store を操作するための `FastAPI + Ji
 - [認証とローカル構成](#認証およびローカル構成リファレンス)
 - [マルチユーザー管理](#マルチユーザー管理)
 - [プロジェクト構造とルート](#プロジェクト構造)
+- [初回インストール](docs/installation_ja.md)
 - [アーキテクチャ](docs/architecture_ja.md)
 - [運用](docs/operations_ja.md)
 - [SQLite スキーマ](docs/database_schema_ja.md)
@@ -44,6 +45,8 @@ teradataevsui は、Teradata Vector Store を操作するための `FastAPI + Ji
 構造上の不一致、または原文に対して古くなった翻訳を拒否します。
 
 ## はじめに
+
+Windows PowerShell、Linux x86-64、ネイティブ本番起動、および Docker Compose を含む空のマシンからの完全な手順は、[初回インストールガイド](docs/installation_ja.md) を参照してください。以下は短縮したネイティブ開発手順です。
 
 プロジェクト／パッケージ名は現在 `teradataevsui` です。サポート対象の CLI コマンドは
 `teradataevsui-db` と `teradataevsui-ops` で、旧 `evsui-db` と `evsui-ops` は
@@ -105,7 +108,9 @@ uv sync --locked --no-dev
 
 ### 3. 最初の管理者の構成
 
-teradataevsui はユーザーとサーバー側セッションを SQLite に保存します。データベースは `data/evsui.db` に自動作成されます。Python 組み込みの SQLite ドライバーを使用するため、別途データベースをインストールする必要はありません。ブートストラップ管理者は初回起動時に限って設定してください。
+teradataevsui はユーザーとサーバー側セッションを SQLite に保存します。データベースは `data/evsui.db` に自動作成されます。Python 組み込みの SQLite ドライバーを使用するため、別途データベースをインストールする必要はありません。新規インストールでは、アプリケーションを起動してブラウザーで開きます。ユーザーが存在しない場合は **Create administrator** が開き、初回 username、password、password confirmation の設定を求めます。管理者作成後、この一回限りの設定画面は閉じられます。
+
+無人デプロイでは、初回起動前に環境変数から最初の管理者を作成できます。
 
 Windows PowerShell：
 
@@ -121,7 +126,7 @@ export EVSUI_BOOTSTRAP_ADMIN=admin
 export EVSUI_BOOTSTRAP_PASSWORD='replace-with-a-strong-password'
 ```
 
-パスワードは Argon2 ハッシュとしてのみ保存されます。管理者が作成された後、ブートストラップ変数によって更新または上書きされることはありません。上部バーの **System Configuration** から、データベース接続プロファイルとアカウントを管理してください。
+ブラウザー設定と環境変数設定は、どちらも 8 文字以上の password を要求します。password は Argon2 ハッシュとしてのみ保存されます。管理者が作成された後、初回設定画面とブートストラップ変数によって更新または上書きされることはありません。上部バーの **System Configuration** から、データベース接続プロファイルとアカウントを管理してください。
 
 Teradata および Unstructured の任意のデフォルト値を設定するには、`app/config/local_dev.example.json` を `app/config/local_dev.json` にコピーします。login セクションは、旧インストールからの初回移行専用として残されています。代表的なローカル構成は次のとおりです。
 
@@ -147,7 +152,7 @@ Teradata および Unstructured の任意のデフォルト値を設定するに
 }
 ```
 
-空の SQLite データベースでは、`app/config/local_dev.json`、`app/config/auth_users.json`、`POC_AUTH_FILE`、または旧 `POC_ADMIN_USER`／`POC_ADMIN_PASSWORD` 変数にある旧ユーザーが一度だけインポートされます。最初にインポートされたユーザーは `admin`、以降のユーザーは `operator` になります。新規インストールでは、代わりに `EVSUI_BOOTSTRAP_*` 変数を使用してください。
+空の SQLite データベースでは、`app/config/local_dev.json`、`app/config/auth_users.json`、`POC_AUTH_FILE`、または旧 `POC_ADMIN_USER`／`POC_ADMIN_PASSWORD` 変数にある旧ユーザーが一度だけインポートされます。最初にインポートされたユーザーは `admin`、以降のユーザーは `operator` になります。対話型の新規インストールでは **Create administrator**、無人インストールでは `EVSUI_BOOTSTRAP_*` 変数を使用してください。
 
 システム構成が存在しない場合、旧 `connection` 値はデフォルトのデータベース接続プロファイルとして一度だけインポートされます。インポートされた値を確認した後、JSON ファイルから削除してください。管理者は **System Configuration → Database Connections** で、プロファイルの作成、編集、削除、およびデフォルトの選択ができます。ホームページでは、ユーザーが接続前にこれらのプロファイルから 1 つを選択できます。マルチフォーマットモードを使用しない場合、`unstructured.api_key` は空のままで構いません。
 
@@ -217,7 +222,7 @@ Invoke-RestMethod http://127.0.0.1:8010/healthz
 
 ### よくある起動時の問題
 
-- **Server auth is not configured**：`EVSUI_BOOTSTRAP_ADMIN` と `EVSUI_BOOTSTRAP_PASSWORD` を設定してから、teradataevsui を再起動してください。
+- **Create administrator が繰り返し表示される**：ユーザーテーブルはまだ空です。一回限りのフォームを完了するか、無人設定では再起動前に `EVSUI_BOOTSTRAP_ADMIN` と `EVSUI_BOOTSTRAP_PASSWORD` の両方を設定してください。
 - **`uv` is not available**：`uv --version` を実行し、起動コマンドを使用する前に `uv` をインストールするか `PATH` を修正してください。記載されている `uv run` の手順では、仮想環境を手動で有効化する必要はありません。
 - **Unstructured API key missing**：管理者が **System Configuration → Unstructured IO** で共有エンドポイントと API キーを保存する必要があります。
 - **Teradata connection fails**：管理者に、選択した保存済みプロファイルの Host、Username、Password、UES URL、PAT Token、および必要な PEM／証明書データを確認してもらい、そのプロファイルで再接続してください。
@@ -621,8 +626,9 @@ Node.js のビルド手順も TypeScript の依存関係もありません。テ
 
 - `Fast + enrichment nodes`：エンリッチメント出力を期待しないでください。
 - `Auto/High Res + enrichment nodes`：ファイル内容とルーティングされたパーティションパスが対象となる場合にサポートされます。
-- `VLM + separate enrichment nodes`：通常の設計パターンとして追加しないでください。公式ワークフローガイダンスでは、不要または許可されていないとされています。
-- 画像説明、テーブル説明、table-to-HTML、および生成 OCR は、ノードの `subtype` を通じてプロバイダーを選択します。現在の Pipeline API の例では空の `settings` オブジェクトを使用します。Partition Endpoint のパラメータや、推測に基づく `provider_type`／`model` フィールドをこれらのノードに挿入しないでください。NER では文書化されたプロバイダー／モデル設定を保持します。
+- `VLM + separate image/table/OCR enrichment nodes`：追加しないでください。VLM がそれらの出力を提供します。NER は引き続き使用できます。
+- model-backed の画像／テーブル説明、table-to-HTML、生成 OCR、NER ノードは、選択した `provider_type` と `model` を送信します。`twopass_image_description` と `twopass_table2html` は platform-managed model のため、両方を送信しません。
+- on-demand job は一リクエストにつき一ファイルを送信し、10 MB を超えるファイルは network I/O 前に拒否します。
 
 ### 現在の teradataevsui のデフォルト値
 
@@ -775,7 +781,7 @@ teradataevsui 検索 API を使用するアプリケーションの場合：
 
 - **Vector Store Creation -> Upload PDF / Documents** はファイルアップロード専用です。`bdrel` は Create 中に `bdoc`、`bblk`、および `bnode` とともに作成されます。
 - 作成時のファイル名ルール行は即時有効になります。**BookRAG Governance → Document Governance → Document Relationships** を使用して、行の読み込み、確認、追加、編集、削除、インポート、またはエクスポートを行います。
-- Document Relationships パネルは読み込み時に独自の Vector Store リストを更新し、**Refresh Vector Stores** を提供します。最初に Retrieval ページのリスト操作を実行する必要はありません。
+- Document Governance は、共通の Vector Store 選択と一つの **Refresh Vector Stores** 操作を提供します。**Load** を実行すると、Document Metadata と Document Relationships は同じ選択中 Store を読み込みます。最初に Retrieval ページのリスト操作を実行する必要はありません。
 - 古い Vector Store に `bdoc` はあるものの `bdrel` がない場合は、**Initialize bdrel** をクリックします。これは、`bdoc` にドキュメントが含まれることを検証した後に空のテーブルを作成するだけであり、関係を推定して生成するものではありません。
 - 既存の旧 `bdrel` テーブルを次回初期化または変更すると、廃止された `is_active` と `confidence` 列が、行を削除せずに削除されます。検索では、すでに旧テーブルのすべての行を有効として扱います。
 - CSV インポートでは、端点を `doc_id` で識別できます。ファイル名のみのインポートは、そのファイル名が `bdoc` に存在し、かつ一意の場合に限り受け付けられます。その後、保存されるファイル名は `bdoc` から正規化されます。
@@ -822,8 +828,8 @@ client_rules:
 - 初回起動時に限り、データベース行が存在しない場合、`app/config/local_dev.json` から共有構成をブートストラップできます。以降の UI 変更が正式な値となり、保存済みキーは再表示されません。
 - サポートされる API キーフィールド：`api_key`、`key_id`、`UNSTRUCTURED_API_KEY`、`UNSTRUCTURED_API_KEY_AUTH`
 - サポートされる API URL フィールド：`api_url`、`UNSTRUCTURED_API_URL`、`UNSTRUCTURED_PLATFORM_URL`
-- Unstructured は現在、文書化された API または Python SDK で公開 Workflow モデル一覧エンドポイントを提供していません。teradataevsui には内部フォールバックモデルカタログが付属し、`app/config/unstructured_models.json` または `UNSTRUCTURED_MODEL_CATALOG_PATH` から上書きを読み込めます。
-- コードを変更せずに UI のモデル選択肢を更新するには、`app/config/unstructured_models.example.json` を `app/config/unstructured_models.json` にコピーし、`partitioner_vlm`、`enrichment`、または `table_to_html` セクションを編集します。
+- Unstructured は現在、文書化された API または Python SDK で公開 Workflow モデル一覧エンドポイントを提供していません。teradataevsui は、公式情報源と確認日を記録した版管理対象の `app/config/unstructured_models.example.json` を内蔵カタログとして読み込みます。
+- コードを変更せずに UI のモデル選択肢を上書きするには、そのファイルを Git 対象外の `app/config/unstructured_models.json` へコピーするか、`UNSTRUCTURED_MODEL_CATALOG_PATH` を設定します。上書きは Workflow 機能および provider 単位でマージされます。対応セクションは `partitioner_vlm`、`generative_ocr`、`image_description`、`named_entity_recognition`、`table_description`、`table_to_html` で、旧 `enrichment` セクションも引き続き使用できます。
 
 例：
 

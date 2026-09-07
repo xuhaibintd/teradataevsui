@@ -1,0 +1,8 @@
+{% if operation_status %}
+<div id="top-op-stack-shell" class="top-op-stack" aria-live="polite" hx-swap-oob="outerHTML">
+  <p
+    class="top-op-line {% if operation_status.kind == 'error' %}err{% elif operation_status.kind == 'ok' %}ok{% else %}warn{% endif %}"
+    title="{{ operation_status.detail|default('', true) }}"
+  ><strong>{{ operation_status.title }}</strong>{% if operation_status.detail %} <span>{{ operation_status.detail }}</span>{% endif %}</p>
+</div>
+{% endif %}

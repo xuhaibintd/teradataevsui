@@ -34,6 +34,7 @@ product-restricted proposal, not an OSI-approved open-source license.
 - [Authentication and Local Configuration](#authentication-and-local-configuration-reference)
 - [Multi-user Administration](#multi-user-administration)
 - [Project Structure and Routes](#project-structure)
+- [First installation](docs/installation.md)
 - [Architecture](docs/architecture.md)
 - [Operations](docs/operations.md)
 - [SQLite schema](docs/database_schema.md)
@@ -43,6 +44,8 @@ counterpart. Use the language switch at the top of a document; CI rejects missin
 structurally divergent, or stale translations.
 
 ## Getting Started
+
+For a complete empty-machine procedure covering Windows PowerShell, Linux x86-64, native production startup, and Docker Compose, follow the [First Installation Guide](docs/installation.md). The steps below are the shorter native-development path.
 
 The project/package is now named `teradataevsui`. The supported CLI commands are
 `teradataevsui-db` and `teradataevsui-ops`; the old `evsui-db` and `evsui-ops`
@@ -105,7 +108,9 @@ so repeated maintenance does not accumulate orphan packages.
 
 ### 3. Configure the first administrator
 
-teradataevsui stores users and server-side sessions in SQLite. The database is created automatically at `data/evsui.db`; Python's built-in SQLite driver requires no separate database installation. Set the bootstrap administrator only for the first start.
+teradataevsui stores users and server-side sessions in SQLite. The database is created automatically at `data/evsui.db`; Python's built-in SQLite driver requires no separate database installation. On a new installation, start the application and open it in a browser. If no users exist, the application opens **Create administrator** and asks for the initial username, password, and password confirmation. The one-time setup page closes as soon as the administrator is created.
+
+For an unattended deployment, you can create the first administrator from environment variables before the first start:
 
 Windows PowerShell:
 
@@ -121,7 +126,7 @@ export EVSUI_BOOTSTRAP_ADMIN=admin
 export EVSUI_BOOTSTRAP_PASSWORD='replace-with-a-strong-password'
 ```
 
-The password is stored only as an Argon2 hash. After the administrator exists, the bootstrap variables do not update or overwrite it. Use **System Configuration** in the top bar to manage database connection profiles and accounts.
+The browser setup and environment-variable setup both require a password of at least eight characters. The password is stored only as an Argon2 hash. After the administrator exists, the setup page and bootstrap variables cannot update or overwrite it. Use **System Configuration** in the top bar to manage database connection profiles and accounts.
 
 For optional Teradata and Unstructured defaults, copy `app/config/local_dev.example.json` to `app/config/local_dev.json`. The login section is retained only for first-run migration from older installations. A representative local configuration is:
 
@@ -147,7 +152,7 @@ For optional Teradata and Unstructured defaults, copy `app/config/local_dev.exam
 }
 ```
 
-On an empty SQLite database, legacy users from `app/config/local_dev.json`, `app/config/auth_users.json`, `POC_AUTH_FILE`, or the old `POC_ADMIN_USER`/`POC_ADMIN_PASSWORD` variables are imported once. The first imported user becomes `admin`; later imported users become `operator`. New installations should use the `EVSUI_BOOTSTRAP_*` variables instead.
+On an empty SQLite database, legacy users from `app/config/local_dev.json`, `app/config/auth_users.json`, `POC_AUTH_FILE`, or the old `POC_ADMIN_USER`/`POC_ADMIN_PASSWORD` variables are imported once. The first imported user becomes `admin`; later imported users become `operator`. New interactive installations should use **Create administrator**; unattended installations can use the `EVSUI_BOOTSTRAP_*` variables.
 
 The legacy `connection` values are imported once as the default database connection profile when no system configuration exists. After verifying the imported values, remove them from the JSON file. Administrators can create, edit, delete, and select a default profile under **System Configuration → Database Connections**. The home page lets users select one of these profiles before connecting. The `unstructured.api_key` may remain blank unless you use a multi-format mode.
 
@@ -217,7 +222,7 @@ For the uploaded-file `Text PDF Only` flow, the UI does not populate `object_nam
 
 ### Common startup problems
 
-- **Server auth is not configured**: set `EVSUI_BOOTSTRAP_ADMIN` and `EVSUI_BOOTSTRAP_PASSWORD`, then restart teradataevsui.
+- **Create administrator keeps appearing**: the user table is still empty. Complete the one-time form, or set both `EVSUI_BOOTSTRAP_ADMIN` and `EVSUI_BOOTSTRAP_PASSWORD` before restarting for unattended setup.
 - **`uv` is not available**: run `uv --version` and install `uv` or correct `PATH` before using the launch command. The documented `uv run` flow does not require manual virtual-environment activation.
 - **Unstructured API key missing**: an administrator must save the shared endpoint and API key under **System Configuration → Unstructured IO**.
 - **Teradata connection fails**: ask an administrator to verify the selected saved profile's Host, Username, Password, UES URL, PAT Token, and any required PEM/certificate data, then reconnect with that profile.
@@ -622,8 +627,9 @@ Official references:
 
 - `Fast + enrichment nodes`: do not expect enrichment outputs.
 - `Auto/High Res + enrichment nodes`: supported when the file content and routed partition path are eligible.
-- `VLM + separate enrichment nodes`: do not add them as a normal design pattern; official workflow guidance says they are not needed or allowed.
-- Image description, table description, table-to-HTML, and generative OCR select their provider through the node `subtype`; current Pipeline API examples use an empty `settings` object. Do not inject Partition Endpoint parameters or speculative `provider_type`/`model` fields into these nodes. NER retains its documented provider/model settings.
+- `VLM + separate image/table/OCR enrichment nodes`: do not add them; VLM already provides those outputs. NER remains allowed.
+- Model-backed image/table description, table-to-HTML, generative OCR, and NER nodes send the selected `provider_type` and `model`. `twopass_image_description` and `twopass_table2html` omit both settings because the platform manages their models.
+- On-demand jobs submit one file per request and reject files larger than 10 MB before network I/O.
 
 ### Current teradataevsui Defaults
 
@@ -776,7 +782,7 @@ For external MCP/SQL applications, call `GET /api/bookrag/schema?vector_store_na
 
 - **Vector Store Creation -> Upload PDF / Documents** is file upload only. `bdrel` is created during Create together with `bdoc`, `bblk`, and `bnode`.
 - Create-time filename-rule rows are effective immediately. Use **BookRAG Governance → Document Governance → Document Relationships** to load, review, add, edit, delete, import, or export rows.
-- The Document Relationships panel refreshes its own Vector Store list on load and provides **Refresh Vector Stores**; it does not depend on running the Retrieval page's list action first.
+- Document Governance provides one shared Vector Store selector and one **Refresh Vector Stores** action. **Load** opens both Document Metadata and Document Relationships for the same selected store; it does not depend on running the Retrieval page's list action first.
 - If an older vector store has `bdoc` but no `bdrel`, click **Initialize bdrel**. This only creates the empty table after verifying that `bdoc` contains documents; it does not invent relationships.
 - When an existing legacy `bdrel` table is next initialized or changed, obsolete `is_active` and `confidence` columns are dropped without deleting rows. Retrieval already treats every legacy row as effective.
 - CSV import may identify endpoints by `doc_id`. A filename-only import is accepted only when that filename is present and unique in `bdoc`; stored filenames are then canonicalized from `bdoc`.
@@ -823,8 +829,8 @@ client_rules:
 - On first startup only, `app/config/local_dev.json` can bootstrap the shared configuration when no database row exists. Later UI changes are authoritative and do not echo the saved key.
 - Supported API key fields: `api_key`, `key_id`, `UNSTRUCTURED_API_KEY`, `UNSTRUCTURED_API_KEY_AUTH`
 - Supported API URL fields: `api_url`, `UNSTRUCTURED_API_URL`, `UNSTRUCTURED_PLATFORM_URL`
-- Unstructured does not currently expose a public Workflow models-list endpoint in the documented API or Python SDK. teradataevsui ships with an internal fallback model catalog and can load overrides from `app/config/unstructured_models.json` or `UNSTRUCTURED_MODEL_CATALOG_PATH`.
-- To update UI model choices without code changes, copy `app/config/unstructured_models.example.json` to `app/config/unstructured_models.json` and edit the `partitioner_vlm`, `enrichment`, or `table_to_html` sections.
+- Unstructured does not currently expose a public Workflow models-list endpoint in the documented API or Python SDK. teradataevsui loads the versioned bundled catalog in `app/config/unstructured_models.example.json`, which records the official source and check date.
+- To override UI model choices without code changes, copy that file to the ignored `app/config/unstructured_models.json`, or set `UNSTRUCTURED_MODEL_CATALOG_PATH`. Overrides merge by workflow function and provider. Supported sections are `partitioner_vlm`, `generative_ocr`, `image_description`, `named_entity_recognition`, `table_description`, and `table_to_html`; the legacy `enrichment` section remains accepted.
 
 Example:
 

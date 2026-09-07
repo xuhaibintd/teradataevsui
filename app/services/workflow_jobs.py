@@ -429,6 +429,7 @@ def build_workflow_job_handlers(
             create_values=dict(payload.get("create_values") or {}),
             vector_store_name=str(payload.get("vector_store_name") or ""),
             target_database=str(payload.get("target_database") or ""),
+            progress_callback=heartbeat,
         )
         heartbeat(95)
         return _summary_result(
@@ -477,6 +478,7 @@ def build_workflow_job_handlers(
             parse_run_id=str(payload.get("parse_run_id") or ""),
             vector_store_name=str(payload.get("vector_store_name") or ""),
             target_database=str(payload.get("target_database") or ""),
+            progress_callback=heartbeat,
         )
         heartbeat(95)
         return _summary_result(

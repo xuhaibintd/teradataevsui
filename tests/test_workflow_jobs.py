@@ -154,6 +154,32 @@ class WorkflowJobTests(unittest.TestCase):
         self.assertNotIn("runtime-secret", str(raised.exception))
         self.assertIn("[REDACTED]", str(raised.exception))
 
+    def test_csv_handlers_forward_document_progress_to_job_heartbeat(self) -> None:
+        handlers = workflow_jobs.build_workflow_job_handlers(object())
+        payload = {
+            "parse_run_id": "parse-run",
+            "create_values": {},
+            "vector_store_name": "demo",
+            "target_database": "demo_schema",
+        }
+
+        for kind, function_name in (
+            (workflow_jobs.BOOKRAG_CSV_GENERATE_JOB, "run_bookrag_json_to_csv"),
+            (workflow_jobs.MULTI_FORMAT_CSV_GENERATE_JOB, "run_multi_format_json_to_csv"),
+        ):
+            with self.subTest(kind=kind):
+                progress_updates = []
+
+                def generate(**kwargs):
+                    kwargs["progress_callback"](50)
+                    return {"status": "ready"}
+
+                with mock.patch.object(workflow_jobs, function_name, side_effect=generate):
+                    result = handlers[kind](payload, progress_updates.append)
+
+                self.assertEqual(progress_updates, [10, 50, 95])
+                self.assertEqual(result["summary"], {"status": "ready"})
+
     def test_teradata_profile_secrets_are_redacted_from_runtime_errors(self) -> None:
         class AuthStore:
             @staticmethod

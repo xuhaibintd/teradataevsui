@@ -1,22 +1,11 @@
 {% set relation_admin = document_relation_admin|default({}) %}
 {% set can_edit = relation_admin.can_manage_governance|default(true) %}
+{% set operation_status = relation_admin.status|default(none) %}
+{% include "partials/operation_status_oob.html" %}
 <div
   id="document-relation-admin"
   class="document-relation-admin"
-  {% if relation_admin.auto_refresh %}
-  hx-get="/ui/admin/document-relations?refresh=true"
-  hx-trigger="load"
-  hx-target="this"
-  hx-swap="outerHTML"
-  {% endif %}
 >
-  {% if relation_admin.status %}
-  <div class="admin-rule-status {{ relation_admin.status.kind }}" role="status" aria-live="polite">
-    <strong>{{ relation_admin.status.title }}</strong>
-    <span>{{ relation_admin.status.detail }}</span>
-  </div>
-  {% endif %}
-
   <section class="admin-rule-card">
     <div class="admin-rule-card-head">
       <div>
@@ -24,27 +13,8 @@
         <p class="muted">Core table: bdoc + bblk + bnode + bdrel</p>
       </div>
     </div>
-    <form class="document-relation-toolbar" hx-get="/ui/admin/document-relations" hx-target="#document-relation-admin" hx-swap="outerHTML">
-      <label class="field">
-        <span>Vector Store</span>
-        <select name="vector_store_name" required>
-          <option value="">Select a Vector Store</option>
-          {% for name in relation_admin.vector_store_options|default([]) %}
-          <option value="{{ name }}" {% if name == relation_admin.selected_vector_store %}selected{% endif %}>{{ name }}</option>
-          {% endfor %}
-          {% if relation_admin.selected_vector_store and relation_admin.selected_vector_store not in relation_admin.vector_store_options|default([]) %}
-          <option value="{{ relation_admin.selected_vector_store }}" selected>{{ relation_admin.selected_vector_store }}</option>
-          {% endif %}
-        </select>
-      </label>
-      <button type="submit" class="wizard-btn">Load</button>
-      <button type="submit" name="refresh" value="true" formnovalidate class="ghost wizard-btn">Refresh Vector Stores</button>
-      {% if can_edit and relation_admin.selected_vector_store and not relation_admin.table_initialized %}
-      <button type="button" class="ghost wizard-btn" hx-post="/ui/admin/document-relations/initialize" hx-vals='{"vector_store_name":"{{ relation_admin.selected_vector_store }}"}' hx-target="#document-relation-admin" hx-swap="outerHTML">Initialize bdrel</button>
-      {% endif %}
-    </form>
-    {% if not relation_admin.vector_store_options|default([]) %}
-    <p class="muted">Refresh Vector Stores to retrieve the available stores, then select one and load its relationships.</p>
+    {% if can_edit and relation_admin.selected_vector_store and not relation_admin.table_initialized %}
+    <button type="button" class="ghost wizard-btn" hx-post="/ui/admin/document-relations/initialize" hx-vals='{"vector_store_name":"{{ relation_admin.selected_vector_store }}"}' hx-target="#document-relation-admin" hx-swap="outerHTML">Initialize bdrel</button>
     {% endif %}
     {% if relation_admin.selected_vector_store and relation_admin.table_initialized %}
     <div class="document-relation-import-export">

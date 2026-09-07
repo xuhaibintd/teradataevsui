@@ -46,6 +46,7 @@ class CreatePanelBookRAGToggleTests(unittest.TestCase):
 
         self.assertIn('type="module"', source)
         self.assertIn('./modules/create-uploads.js?v=20260905-2', app_js)
+        self.assertIn('./modules/destroy-panel.js?v=20260905-3', app_js)
 
     def test_bookrag_mandatory_stages_do_not_render_optional_controls(self):
         source = (TEMPLATES_DIR / "partials" / "create_panel.html").read_text(encoding="utf-8")
@@ -408,6 +409,31 @@ class UnstructuredAdminPanelTests(unittest.TestCase):
         self.assertNotIn('name="unstructured_api_url"', html)
         self.assertNotIn('name="unstructured_api_key"', html)
         self.assertIn("Document Metadata", html)
+        self.assertEqual(html.count(">Refresh Vector Stores</button>"), 1)
+        self.assertEqual(html.count('name="vector_store_name"'), 1)
+
+    def test_document_governance_uses_one_vector_store_for_both_sections(self):
+        html = self.template.render(
+            document_governance_admin={
+                "vector_store_options": ["SHARED_STORE"],
+                "selected_vector_store": "SHARED_STORE",
+            },
+            document_metadata_admin={
+                "selected_vector_store": "SHARED_STORE",
+                "documents": [{"doc_id": "doc-1", "filename": "report.pdf"}],
+            },
+            document_relation_admin={
+                "selected_vector_store": "SHARED_STORE",
+                "documents": [{"doc_id": "doc-1", "filename": "report.pdf"}],
+                "table_initialized": False,
+            },
+        )
+
+        self.assertIn('hx-get="/ui/admin/document-governance"', html)
+        self.assertIn('hx-get="/ui/admin/document-governance?refresh=true"', html)
+        self.assertEqual(html.count(">Refresh Vector Stores</button>"), 1)
+        self.assertEqual(html.count('<select name="vector_store_name" required>'), 1)
+        self.assertIn('"vector_store_name":"SHARED_STORE"', html)
 
 
 class DocumentMetadataAdminTests(unittest.TestCase):
@@ -416,18 +442,18 @@ class DocumentMetadataAdminTests(unittest.TestCase):
         cls.env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
         cls.template = cls.env.get_template("partials/document_metadata_admin.html")
 
-    def test_initial_panel_auto_refreshes_and_exposes_autofill(self):
+    def test_panel_exposes_autofill_without_its_own_vector_store_picker(self):
         html = self.template.render(
             document_metadata_admin={
-                "auto_refresh": True,
                 "selected_vector_store": "EXAMPLE_STORE",
                 "documents": [{"doc_id": "doc-1", "filename": "report.pdf"}],
             }
         )
 
-        self.assertIn('hx-get="/ui/admin/document-metadata?refresh=true"', html)
         self.assertIn('hx-post="/ui/admin/document-metadata/autofill"', html)
         self.assertIn("Auto-fill Metadata", html)
+        self.assertNotIn("Refresh Vector Stores", html)
+        self.assertNotIn('<select name="vector_store_name"', html)
         self.assertNotIn("Recent Effective Documents", html)
 
     def test_bookrag_loaded_run_is_selectable_before_vectorstore_is_ready(self):
@@ -458,13 +484,15 @@ class DocumentRelationshipAdminTests(unittest.TestCase):
         cls.env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
         cls.template = cls.env.get_template("partials/document_relation_admin.html")
 
-    def test_initial_panel_auto_refreshes_and_exposes_manual_refresh(self):
-        html = self.template.render(document_relation_admin={"auto_refresh": True})
+    def test_panel_uses_shared_picker_and_exposes_initialize_action(self):
+        html = self.template.render(document_relation_admin={
+            "selected_vector_store": "EXAMPLE_STORE",
+            "table_initialized": False,
+        })
 
-        self.assertIn('hx-get="/ui/admin/document-relations?refresh=true"', html)
-        self.assertIn('hx-trigger="load"', html)
-        self.assertIn('name="refresh" value="true"', html)
-        self.assertIn("Refresh Vector Stores", html)
+        self.assertNotIn("Refresh Vector Stores", html)
+        self.assertNotIn('<select name="vector_store_name"', html)
+        self.assertIn("Initialize bdrel", html)
 
     def test_refresh_uses_vsmanager_list_without_changing_selection(self):
         original_manager = web_router_module.VSManager

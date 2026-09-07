@@ -53,6 +53,8 @@ from app.services.bookrag_schema import ensure_bookrag_retrieval_view
 from app.services.create_config import CREATE_FIELD_MAX_LEN, default_create_values
 from app.services.doc_modes.constants import collect_doc_pipeline_ui_values
 from app.services.multi_format import (
+    ensure_bookrag_csv_generation_target_available,
+    ensure_multi_format_csv_generation_target_available,
     list_bookrag_csv_runs,
     list_multi_format_csv_runs,
 )
@@ -123,6 +125,7 @@ _ADMIN_ONLY_PATHS = {
     "/ui/evs/sessions/disconnect",
 }
 _GOVERNANCE_PREFIXES = (
+    "/ui/admin/document-governance",
     "/ui/admin/document-metadata",
     "/ui/admin/document-relations",
 )
@@ -266,7 +269,11 @@ def _bookrag_admin_vector_store_options(app) -> list[str]:
         for item in (
             list(state.get("chat_vs_options") or [])
             + local_run_names
-            + [state.get("last_created_vs_name"), state.get("selected_vs_name")]
+            + [
+                state.get("bookrag_governance_vs_name"),
+                state.get("last_created_vs_name"),
+                state.get("selected_vs_name"),
+            ]
         )
         if str(item or "").strip()
     ))
@@ -283,6 +290,7 @@ def _document_relation_admin_context(
     options = _bookrag_admin_vector_store_options(app)
     selected = str(
         vector_store_name
+        or state.get("bookrag_governance_vs_name")
         or state.get("last_created_vs_name")
         or state.get("selected_vs_name")
         or ""
@@ -345,6 +353,7 @@ def _document_metadata_admin_context(
     options = _bookrag_admin_vector_store_options(app)
     selected = str(
         vector_store_name
+        or state.get("bookrag_governance_vs_name")
         or state.get("last_created_vs_name")
         or state.get("selected_vs_name")
         or ""
@@ -383,6 +392,39 @@ def _document_metadata_admin_context(
                 "detail": str(ex),
             }
     return context
+
+
+def _document_governance_admin_context(
+    app,
+    *,
+    vector_store_name: str = "",
+    status: dict | None = None,
+) -> dict:
+    """Build both governance sections from one shared Vector Store selection."""
+    state = app.state.evs_state
+    selected = str(
+        vector_store_name
+        or state.get("bookrag_governance_vs_name")
+        or state.get("last_created_vs_name")
+        or state.get("selected_vs_name")
+        or ""
+    ).strip()
+    options = _bookrag_admin_vector_store_options(app)
+    return {
+        "document_governance_admin": {
+            "vector_store_options": options,
+            "selected_vector_store": selected,
+            "status": status,
+        },
+        "document_metadata_admin": _document_metadata_admin_context(
+            app,
+            vector_store_name=selected,
+        ),
+        "document_relation_admin": _document_relation_admin_context(
+            app,
+            vector_store_name=selected,
+        ),
+    }
 
 
 def _refresh_document_relation_vector_store_options(request: Request) -> dict[str, str]:
@@ -782,6 +824,21 @@ async def generate_csv_for_create(request: Request):
         or ""
     ).strip()
 
+    try:
+        ensure_bookrag_csv_generation_target_available(
+            vector_store_name=vector_store_name,
+            target_database=target_database,
+        )
+    except RuntimeError as ex:
+        return request.app.state.templates.TemplateResponse(
+            request,
+            "partials/bookrag_csv_generation_result.html",
+            {
+                "bookrag_csv_generation": None,
+                "bookrag_csv_generation_error": str(ex),
+            },
+        )
+
     job = queue_workflow_job(
         request,
         kind=BOOKRAG_CSV_GENERATE_JOB,
@@ -890,6 +947,20 @@ async def generate_multi_format_csv_for_create(request: Request):
         or connection_params.get("username")
         or ""
     ).strip()
+    try:
+        ensure_multi_format_csv_generation_target_available(
+            vector_store_name=vector_store_name,
+            target_database=target_database,
+        )
+    except RuntimeError as ex:
+        return request.app.state.templates.TemplateResponse(
+            request,
+            "partials/multi_format_csv_generation_result.html",
+            {
+                "multi_format_csv_generation": None,
+                "multi_format_csv_generation_error": str(ex),
+            },
+        )
     job = queue_workflow_job(
         request,
         kind=MULTI_FORMAT_CSV_GENERATE_JOB,
@@ -1463,6 +1534,34 @@ async def update_bookrag_section_rules_panel(request: Request):
         context,
     )
 
+
+
+@router.get("/ui/admin/document-governance", response_class=HTMLResponse)
+async def load_document_governance_admin(
+    request: Request,
+    vector_store_name: str = "",
+    refresh: bool = False,
+):
+    if not _is_logged_in(request, request.app):
+        return HTMLResponse("Unauthorized", status_code=401)
+    _activate_session_state(request, request.app)
+    state = request.app.state.evs_state
+    selected = vector_store_name.strip()
+    if selected:
+        state["bookrag_governance_vs_name"] = selected
+    status = _refresh_document_relation_vector_store_options(request) if refresh else None
+    if selected or refresh:
+        _persist_active_session_state(request, request.app)
+    context = _document_governance_admin_context(
+        request.app,
+        vector_store_name=selected,
+        status=status,
+    )
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "partials/document_governance_admin.html",
+        context,
+    )
 
 
 @router.get("/ui/admin/document-metadata", response_class=HTMLResponse)

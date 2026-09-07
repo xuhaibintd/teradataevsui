@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from app.services.unstructured_job_runner import (
+    UNSTRUCTURED_ON_DEMAND_MAX_FILE_BYTES,
     create_unstructured_on_demand_job,
     get_unstructured_job_diagnostics,
     wait_for_unstructured_job,
@@ -24,6 +25,23 @@ class _Response:
 
 
 class UnstructuredJobSubmissionTests(unittest.TestCase):
+    def test_oversized_file_is_rejected_before_network_io(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "oversized.pdf"
+            with source.open("wb") as stream:
+                stream.truncate(UNSTRUCTURED_ON_DEMAND_MAX_FILE_BYTES + 1)
+            with mock.patch("app.services.unstructured_job_runner.httpx.post") as post_mock, self.assertRaisesRegex(
+                RuntimeError, "up to 10 MB"
+            ):
+                create_unstructured_on_demand_job(
+                    request_parameters={"workflow_nodes": []},
+                    src=source,
+                    api_key="secret",
+                    api_url="https://example.invalid/api/v1",
+                )
+
+        post_mock.assert_not_called()
+
     def test_rate_limit_response_retries_using_server_delay(self) -> None:
         responses = [
             _Response(
