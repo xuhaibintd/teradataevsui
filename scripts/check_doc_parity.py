@@ -728,7 +728,6 @@ def local_markdown_links(
 ) -> list[tuple[str, str, Path]]:
     """Return validated local inline links, including image destinations."""
 
-    root = root.resolve()
     found: list[tuple[str, str, Path]] = []
     for link in _extract_links(text):
         parsed = urlsplit(link.target)
