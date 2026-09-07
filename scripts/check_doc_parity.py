@@ -83,6 +83,12 @@ def normalized_text(path: Path) -> str:
     return _normalize_string(path.read_text(encoding="utf-8-sig"))
 
 
+def _relative_path(path: Path, root: Path) -> Path:
+    """Return a stable repository-relative path across Windows path aliases."""
+
+    return path.resolve().relative_to(root.resolve())
+
+
 def source_digest(text: str) -> str:
     canonical = _normalize_string(text).rstrip("\n") + "\n"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -510,7 +516,7 @@ def _extract_links(text: str) -> list[MarkdownLink]:
 
 def _relative_display(path: Path, root: Path) -> str:
     try:
-        return path.relative_to(root).as_posix()
+        return _relative_path(path, root).as_posix()
     except ValueError:
         return str(path)
 
@@ -554,11 +560,12 @@ def _resolve_local_target(document: Path, target: str, root: Path) -> tuple[Path
     path_part = unquote(parsed.path)
     if path_part.startswith("/"):
         raise MarkdownValidationError("repository-local links must be relative")
-    base = PurePosixPath(document.relative_to(root).parent.as_posix())
+    document_relative = _relative_path(document, root)
+    base = PurePosixPath(document_relative.parent.as_posix())
     if path_part:
         combined = posixpath.normpath((base / PurePosixPath(path_part)).as_posix())
     else:
-        combined = document.relative_to(root).as_posix()
+        combined = document_relative.as_posix()
     relative = PurePosixPath(combined)
     if relative.is_absolute() or relative.parts[:1] == ("..",):
         raise MarkdownValidationError("local link escapes the repository")
@@ -639,7 +646,7 @@ def _canonical_document(relative: PurePosixPath) -> PurePosixPath:
 
 
 def _target_locale(path: Path, root: Path) -> tuple[str | None, bool]:
-    relative = PurePosixPath(path.relative_to(root).as_posix())
+    relative = PurePosixPath(_relative_path(path, root).as_posix())
     if relative.as_posix() == "LICENSE_ja.md" or (
         relative.suffix.lower() == ".md" and relative.stem.lower().endswith("_ja")
     ):
@@ -703,7 +710,7 @@ def _link_signatures(
                 "Japanese document links to English content without an English label: "
                 f"{display} -> {link.target}"
             )
-        relative = PurePosixPath(resolved.relative_to(root).as_posix())
+        relative = PurePosixPath(_relative_path(resolved, root).as_posix())
         signatures.append(
             LinkSignature(
                 link.is_image,
@@ -828,7 +835,7 @@ def check_pair(
     relative_source = _relative_display(source, root)
     relative_translation = _relative_display(translation, root)
     try:
-        exact_source = _walk_exact(root, PurePosixPath(source.relative_to(root).as_posix()))
+        exact_source = _walk_exact(root, PurePosixPath(_relative_path(source, root).as_posix()))
     except MarkdownValidationError as error:
         problems.append(f"missing English document: {relative_source} ({error})")
         return
@@ -837,7 +844,7 @@ def check_pair(
         return
     try:
         exact_translation = _walk_exact(
-            root, PurePosixPath(translation.relative_to(root).as_posix())
+            root, PurePosixPath(_relative_path(translation, root).as_posix())
         )
     except MarkdownValidationError as error:
         problems.append(f"missing Japanese document: {relative_translation} ({error})")
@@ -1038,16 +1045,16 @@ def check_repository(root: Path = ROOT) -> list[str]:
     problems: list[str] = []
     pairs = public_pairs(root)
     expected_translations = {
-        translation.relative_to(root).as_posix() for _, translation in pairs
+        _relative_path(translation, root).as_posix() for _, translation in pairs
     }
     docs = root / "docs"
     actual_translations = {
-        path.relative_to(root).as_posix()
+        _relative_path(path, root).as_posix()
         for path in ([root / "README_ja.md"] if (root / "README_ja.md").is_file() else [])
     }
     if docs.is_dir():
         actual_translations.update(
-            path.relative_to(root).as_posix()
+            _relative_path(path, root).as_posix()
             for path in docs.rglob("*")
             if path.is_file()
             and path.suffix.lower() == ".md"
