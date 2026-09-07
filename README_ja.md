@@ -1,7 +1,7 @@
 # teradataevsui — Teradata Vector Store UI
 
 > **言語:** [English](README.md) | 日本語
-<!-- Source-SHA256: 5df160e69139b4f536e84eee273e74c87f375d43775bbd59fa794565f7f369a1 -->
+<!-- Source-SHA256: b79fd3ace2ad0ea4ab181a6be73aaab5a8043b629ada025f2f9ebdff3e8ce572 -->
 
 Teradata Vector Store は、Teradata データ上でベクトル検索・取得機能を提供します。ドキュメントのチャンクと埋め込みを管理対象の Vector Store として保存し、`VectorStore` と `VSManager` を通じて、作成、ヘルスチェック、一覧表示、削除、セマンティック類似検索、および根拠付き Q&A の操作を公開します。
 
@@ -237,46 +237,51 @@ teradataevsui は、1 つの FastAPI プロセスで動作するサーバーレ�
 ```mermaid
 flowchart LR
     subgraph Clients["Clients"]
-        Browser["Browser<br/>Jinja2 pages + HTMX"]
-        ApiClient["External API client<br/>Bearer token or API key"]
+        Browser["Browser<br/>Jinja2 + HTMX"]
+        ApiClient["External API client<br/>Bearer / API key"]
     end
 
     subgraph App["teradataevsui FastAPI process"]
-        Web["Web router<br/>HTML and HTMX endpoints"]
-        API["API router<br/>BookRAG JSON endpoints"]
-        Auth["Authentication and roles<br/>Argon2 + SQLite"]
-        Session["Request-scoped UI state<br/>isolated by server session"]
-        Flow["Application workflows<br/>connect / create / retrieve / destroy"]
-        Service["Domain services<br/>document modes / BookRAG / evaluation"]
-        TDAdapter["Teradata runtime adapter<br/>teradatagenai / teradataml / teradatasql"]
-        USAdapter["Unstructured integration gateway<br/>contracts + on-demand jobs"]
+        Web["Web routers<br/>HTML + HTMX"]
+        API["JSON API router<br/>BookRAG endpoints"]
+        Auth["Authentication + roles<br/>Argon2 + server sessions"]
+        Session["In-memory UI state<br/>activated per session request"]
+        Flow["Application workflows<br/>create / retrieve / destroy"]
+        Jobs["Durable job runner<br/>parse / CSV / load / create"]
+        Service["Domain services<br/>document modes / BookRAG"]
+        Repo["Repositories<br/>SQLite control plane"]
+        TDAdapter["Teradata runtime<br/>Teradata SDKs"]
+        USAdapter["Unstructured gateway<br/>contracts + jobs"]
 
         Web --> Auth
         API --> Auth
         Auth --> Session
         Web --> Flow
+        Web --> Jobs
         API --> Service
         Flow --> Service
+        Jobs --> Service
+        Auth --> Repo
+        Jobs --> Repo
+        Service --> Repo
         Service --> TDAdapter
         Service --> USAdapter
     end
 
     subgraph Local["Local runtime data"]
-        StateDB["data/evsui.db<br/>users / sessions / roles / jobs / audit<br/>encrypted connection and service credentials"]
-        Files["uploads/<br/>documents / JSON / CSV / manifests"]
-        Pem["pem_runtime/<br/>restricted temporary PEM materialization"]
+        StateDB["SQLite: data/evsui.db<br/>users / sessions / jobs / audit<br/>encrypted credentials"]
+        Files["uploads/<br/>documents / JSON / CSV<br/>manifests + artifacts"]
+        Pem["pem_runtime/<br/>temporary PEM<br/>materialization"]
     end
 
     subgraph External["External services"]
-        TD["Teradata<br/>source tables / BookRAG tables / vector stores"]
-        US["Unstructured Workflow API<br/>document parsing and enrichment"]
+        TD["Teradata<br/>source + BookRAG tables<br/>Vector Stores"]
+        US["Unstructured Workflow API<br/>parsing + enrichment"]
     end
 
     Browser --> Web
     ApiClient --> API
-    StateDB <--> Auth
-    StateDB <--> Session
-    StateDB <--> Service
+    StateDB <--> Repo
     Files <--> Service
     Pem <--> TDAdapter
     TDAdapter <--> TD
@@ -325,9 +330,10 @@ flowchart TB
     TextCreate --> Poll["Poll VectorStore.status()"]
     MFCreate --> Poll
     BRCreate --> Poll
-    Poll --> Terminal{"Terminal state"}
+    Poll --> Terminal{"Observed state"}
     Terminal -->|Ready| Ready["Available for retrieval"]
     Terminal -->|Failed| Failed["Show failure and retain diagnostics"]
+    Terminal -->|Timeout / unknown| Retry["Retain diagnostics<br/>and allow status recheck"]
 ```
 
 どちらのマルチフォーマットモードでも、解析、JSON から CSV への変換、および Teradata への読み込みは意図的に別々の段階です。各段階は、パス、チェックサム、行数、およびステータスを含むマニフェストを書き込みます。後続段階は検証済みの `ready` マニフェストのみを受け付けるため、変換または読み込みだけを再試行する場合に Unstructured 呼び出しを繰り返す必要はありません。
@@ -337,16 +343,21 @@ flowchart TB
 標準の検索は、選択した Vector Store を直接呼び出します。BookRAG は、管理されたドキュメントスコープを追加し、各セマンティック一致の周囲に追跡可能なエビデンスパッケージを再構築します。
 
 ```mermaid
-flowchart LR
+flowchart TB
     Question["User or API question"] --> Select["Select vector store<br/>Retrieval Run List"]
     Select --> Method{"Retrieval method"}
 
     Method -->|"VectorStore.ask"| Ask["Grounded answer from VectorStore"]
     Method -->|"VectorStore.similarity_search"| Similarity["Semantic matches"]
-    Method -->|"BookRAG API"| BRSimilarity["Similarity search over bnode.content"]
+    Method -->|"BookRAG API"| Plan["Build query plan<br/>facets + temporal scope"]
 
-    BRSimilarity --> Scope["Latest-document policy<br/>and governed document scope"]
-    Scope --> Key["Resolve composite match<br/>(doc_id, node_id)"]
+    Plan --> Scope["Resolve governed documents<br/>and current/background tracks"]
+    Scope --> Current["Current-track semantic search<br/>over bnode.content"]
+    Current --> Coverage{"Evidence coverage sufficient?"}
+    Coverage -->|No| Background["Search eligible<br/>background documents"]
+    Coverage -->|Yes| Rank["Dedupe + rerank + diversify<br/>then lock final node keys"]
+    Background --> Rank
+    Rank --> Key["Resolve composite matches<br/>(doc_id, node_id)"]
     Key --> Expand["Expand ancestor sections and source block"]
     Expand --> Enrich["Attach bdoc metadata, bdrel labels,<br/>and optional entity context"]
     Enrich --> Evidence["Structured evidence packages<br/>with page and section provenance"]
@@ -889,7 +900,7 @@ curl -H "Authorization: Bearer $EVSUI_API_TOKEN" \
 - `POC_ADMIN_USER` と `POC_ADMIN_PASSWORD` は、旧形式の初回入力専用です。
 - ロールは `admin`、`operator`、および `viewer` です。このリリースではユーザー管理に `admin` を強制します。コーパスレベルおよびドキュメントレベルの認可は、今後の本番向け制御です。
 - 無効なパスワードを 5 回連続で入力すると、アカウントが 5 分間ロックされます。
-- 各ログインには永続化されたサーバー側セッションと、独立したリクエストスコープの UI 状態が割り当てられます。Teradata と Unstructured の定義は共有システム構成です。選択中／アクティブな接続は、セッション固有のままです。
+- 各ログインには永続化されたサーバー側セッションと独立したインメモリ UI 状態が割り当てられ、各リクエストでそのセッション用状態が有効化されます。Teradata と Unstructured の定義は共有システム構成です。選択中／アクティブな接続は、セッション固有のままです。
 
 ローカル JSON ファイル内の旧認証情報はプレーンテキストですが、SQLite は Argon2 パスワードハッシュのみを保存します。移行を検証した後、旧パスワードを削除してください。ローカル外からのアクセスを許可する前に、強力なファイルシステム権限、信頼できるリバースプロキシ経由の HTTPS、デフォルト以外の `EVSUI_API_TOKEN`、および適切な本番認証レイヤーを使用してください。
 
@@ -908,15 +919,15 @@ sequenceDiagram
     participant B as Browser
     participant W as FastAPI
     participant A as SQLite AuthStore
-    participant S as Request-scoped UI state
+    participant S as Session-scoped in-memory UI state
     B->>W: POST /login
     W->>A: Verify Argon2 password
     A-->>W: User ID and role
     W->>A: Store SHA-256(session ID), expiry
-    W-->>B: HttpOnly evsui_sid
+    W-->>B: Set HttpOnly, SameSite=Lax evsui_sid
     B->>W: Authenticated request
     W->>A: Validate active session
-    W->>S: Activate this session's state
+    W->>S: Activate this session state for the request
     S-->>W: Isolated connection/form/chat state
 ```
 

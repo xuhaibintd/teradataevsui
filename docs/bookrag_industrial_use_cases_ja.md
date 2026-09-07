@@ -1,7 +1,7 @@
 # BookRAG 産業ユースケース：製品訴求から実証判断まで
 
 > **言語:** [English](bookrag_industrial_use_cases.md) | 日本語
-<!-- Source-SHA256: 3f1c3545f768f1d90bd75fbd79bea536eb50279b3811b6ab6f4002c2dad39cef -->
+<!-- Source-SHA256: 5013a0808686fa6f2b0c5c3d8925d63dbbb4dcc05e29e6abd4df87184d80f8a8 -->
 
 ## 本書の目的
 
@@ -33,12 +33,16 @@ BookRAG が規制、金融、法務、臨床、安全、技術上の判断を自
 ### BookRAG が行うこと
 
 ```mermaid
-flowchart LR
+flowchart TB
     Docs["Long, structured documents"] --> Parse["Unstructured parsing"]
     Parse --> Tables["BookRAG tables<br/>bdoc / bblk / bnode / bdrel / optional graph"]
-    Tables --> Vector["Semantic retrieval<br/>over bnode.content"]
-    Vector --> Scope["Publication and document-scope governance"]
-    Scope --> Rebuild["Evidence reconstruction<br/>ancestor path / source block / page"]
+    Tables --> Plan["Question planning<br/>facets + temporal scope"]
+    Plan --> Scope["Publication and document-scope governance"]
+    Scope --> Vector["Current-track semantic retrieval<br/>over bnode.content"]
+    Vector --> Coverage{"Evidence coverage sufficient?"}
+    Coverage -->|Yes| Rebuild["Evidence reconstruction<br/>ancestor path / source block / page"]
+    Coverage -->|No| Background["Eligible background-track retrieval"]
+    Background --> Rebuild
     Rebuild --> Package["Structured evidence package"]
     Package --> Review["Human reviewer or downstream application"]
     Package --> Answer["Optional generated answer<br/>with evidence-list citations"]

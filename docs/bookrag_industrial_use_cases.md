@@ -32,12 +32,16 @@ This recommendation is a product hypothesis to validate, not a market-size claim
 ### What BookRAG does
 
 ```mermaid
-flowchart LR
+flowchart TB
     Docs["Long, structured documents"] --> Parse["Unstructured parsing"]
     Parse --> Tables["BookRAG tables<br/>bdoc / bblk / bnode / bdrel / optional graph"]
-    Tables --> Vector["Semantic retrieval<br/>over bnode.content"]
-    Vector --> Scope["Publication and document-scope governance"]
-    Scope --> Rebuild["Evidence reconstruction<br/>ancestor path / source block / page"]
+    Tables --> Plan["Question planning<br/>facets + temporal scope"]
+    Plan --> Scope["Publication and document-scope governance"]
+    Scope --> Vector["Current-track semantic retrieval<br/>over bnode.content"]
+    Vector --> Coverage{"Evidence coverage sufficient?"}
+    Coverage -->|Yes| Rebuild["Evidence reconstruction<br/>ancestor path / source block / page"]
+    Coverage -->|No| Background["Eligible background-track retrieval"]
+    Background --> Rebuild
     Rebuild --> Package["Structured evidence package"]
     Package --> Review["Human reviewer or downstream application"]
     Package --> Answer["Optional generated answer<br/>with evidence-list citations"]

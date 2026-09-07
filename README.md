@@ -237,46 +237,51 @@ teradataevsui is a server-rendered web application running in one FastAPI proces
 ```mermaid
 flowchart LR
     subgraph Clients["Clients"]
-        Browser["Browser<br/>Jinja2 pages + HTMX"]
-        ApiClient["External API client<br/>Bearer token or API key"]
+        Browser["Browser<br/>Jinja2 + HTMX"]
+        ApiClient["External API client<br/>Bearer / API key"]
     end
 
     subgraph App["teradataevsui FastAPI process"]
-        Web["Web router<br/>HTML and HTMX endpoints"]
-        API["API router<br/>BookRAG JSON endpoints"]
-        Auth["Authentication and roles<br/>Argon2 + SQLite"]
-        Session["Request-scoped UI state<br/>isolated by server session"]
-        Flow["Application workflows<br/>connect / create / retrieve / destroy"]
-        Service["Domain services<br/>document modes / BookRAG / evaluation"]
-        TDAdapter["Teradata runtime adapter<br/>teradatagenai / teradataml / teradatasql"]
-        USAdapter["Unstructured integration gateway<br/>contracts + on-demand jobs"]
+        Web["Web routers<br/>HTML + HTMX"]
+        API["JSON API router<br/>BookRAG endpoints"]
+        Auth["Authentication + roles<br/>Argon2 + server sessions"]
+        Session["In-memory UI state<br/>activated per session request"]
+        Flow["Application workflows<br/>create / retrieve / destroy"]
+        Jobs["Durable job runner<br/>parse / CSV / load / create"]
+        Service["Domain services<br/>document modes / BookRAG"]
+        Repo["Repositories<br/>SQLite control plane"]
+        TDAdapter["Teradata runtime<br/>Teradata SDKs"]
+        USAdapter["Unstructured gateway<br/>contracts + jobs"]
 
         Web --> Auth
         API --> Auth
         Auth --> Session
         Web --> Flow
+        Web --> Jobs
         API --> Service
         Flow --> Service
+        Jobs --> Service
+        Auth --> Repo
+        Jobs --> Repo
+        Service --> Repo
         Service --> TDAdapter
         Service --> USAdapter
     end
 
     subgraph Local["Local runtime data"]
-        StateDB["data/evsui.db<br/>users / sessions / roles / jobs / audit<br/>encrypted connection and service credentials"]
-        Files["uploads/<br/>documents / JSON / CSV / manifests"]
-        Pem["pem_runtime/<br/>restricted temporary PEM materialization"]
+        StateDB["SQLite: data/evsui.db<br/>users / sessions / jobs / audit<br/>encrypted credentials"]
+        Files["uploads/<br/>documents / JSON / CSV<br/>manifests + artifacts"]
+        Pem["pem_runtime/<br/>temporary PEM<br/>materialization"]
     end
 
     subgraph External["External services"]
-        TD["Teradata<br/>source tables / BookRAG tables / vector stores"]
-        US["Unstructured Workflow API<br/>document parsing and enrichment"]
+        TD["Teradata<br/>source + BookRAG tables<br/>Vector Stores"]
+        US["Unstructured Workflow API<br/>parsing + enrichment"]
     end
 
     Browser --> Web
     ApiClient --> API
-    StateDB <--> Auth
-    StateDB <--> Session
-    StateDB <--> Service
+    StateDB <--> Repo
     Files <--> Service
     Pem <--> TDAdapter
     TDAdapter <--> TD
@@ -325,9 +330,10 @@ flowchart TB
     TextCreate --> Poll["Poll VectorStore.status()"]
     MFCreate --> Poll
     BRCreate --> Poll
-    Poll --> Terminal{"Terminal state"}
+    Poll --> Terminal{"Observed state"}
     Terminal -->|Ready| Ready["Available for retrieval"]
     Terminal -->|Failed| Failed["Show failure and retain diagnostics"]
+    Terminal -->|Timeout / unknown| Retry["Retain diagnostics<br/>and allow status recheck"]
 ```
 
 For both multi-format modes, parsing, JSON-to-CSV conversion, and Teradata loading are deliberately separate stages. Each stage writes a manifest with paths, checksums, row counts, and status. A later stage accepts only a verified `ready` manifest, so an Unstructured call does not need to be repeated when only transformation or loading must be retried.
@@ -337,16 +343,21 @@ For both multi-format modes, parsing, JSON-to-CSV conversion, and Teradata loadi
 Standard retrieval calls the selected Vector Store directly. BookRAG adds governed document scoping and reconstructs a traceable evidence package around each semantic match.
 
 ```mermaid
-flowchart LR
+flowchart TB
     Question["User or API question"] --> Select["Select vector store<br/>Retrieval Run List"]
     Select --> Method{"Retrieval method"}
 
     Method -->|"VectorStore.ask"| Ask["Grounded answer from VectorStore"]
     Method -->|"VectorStore.similarity_search"| Similarity["Semantic matches"]
-    Method -->|"BookRAG API"| BRSimilarity["Similarity search over bnode.content"]
+    Method -->|"BookRAG API"| Plan["Build query plan<br/>facets + temporal scope"]
 
-    BRSimilarity --> Scope["Latest-document policy<br/>and governed document scope"]
-    Scope --> Key["Resolve composite match<br/>(doc_id, node_id)"]
+    Plan --> Scope["Resolve governed documents<br/>and current/background tracks"]
+    Scope --> Current["Current-track semantic search<br/>over bnode.content"]
+    Current --> Coverage{"Evidence coverage sufficient?"}
+    Coverage -->|No| Background["Search eligible<br/>background documents"]
+    Coverage -->|Yes| Rank["Dedupe + rerank + diversify<br/>then lock final node keys"]
+    Background --> Rank
+    Rank --> Key["Resolve composite matches<br/>(doc_id, node_id)"]
     Key --> Expand["Expand ancestor sections and source block"]
     Expand --> Enrich["Attach bdoc metadata, bdrel labels,<br/>and optional entity context"]
     Enrich --> Evidence["Structured evidence packages<br/>with page and section provenance"]
@@ -890,7 +901,7 @@ curl -H "Authorization: Bearer $EVSUI_API_TOKEN" \
 - `POC_ADMIN_USER` and `POC_ADMIN_PASSWORD` are legacy first-run inputs only.
 - Roles are `admin`, `operator`, and `viewer`. This release enforces `admin` on user administration; corpus-level and document-level authorization remain future production controls.
 - Five consecutive invalid passwords lock an account for five minutes.
-- Each login gets a persisted server-side session and independent request-scoped UI state. Teradata and Unstructured definitions are shared system configuration; the selected/active connection remains session-specific.
+- Each login gets a persisted server-side session and independent in-memory UI state that is activated for that session on each request. Teradata and Unstructured definitions are shared system configuration; the selected/active connection remains session-specific.
 
 Legacy credentials in local JSON files are plain text, but SQLite stores only Argon2 password hashes. Remove legacy passwords after verifying migration. Use strong filesystem permissions, HTTPS through a trusted reverse proxy, a non-default `EVSUI_API_TOKEN`, and an appropriate production authentication layer before allowing non-local access.
 
@@ -909,15 +920,15 @@ sequenceDiagram
     participant B as Browser
     participant W as FastAPI
     participant A as SQLite AuthStore
-    participant S as Request-scoped UI state
+    participant S as Session-scoped in-memory UI state
     B->>W: POST /login
     W->>A: Verify Argon2 password
     A-->>W: User ID and role
     W->>A: Store SHA-256(session ID), expiry
-    W-->>B: HttpOnly evsui_sid
+    W-->>B: Set HttpOnly, SameSite=Lax evsui_sid
     B->>W: Authenticated request
     W->>A: Validate active session
-    W->>S: Activate this session's state
+    W->>S: Activate this session state for the request
     S-->>W: Isolated connection/form/chat state
 ```
 

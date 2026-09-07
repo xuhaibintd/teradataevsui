@@ -1,50 +1,46 @@
 # BookRAG パイプライン：データ構造と処理フロー
 
 > **言語:** [English](bookrag_pipeline_diagram.md) | 日本語
-<!-- Source-SHA256: c24d4da545e79c8653c20c4009071e3a6257d5f94ba85a151fa5b23cccdc404a -->
+<!-- Source-SHA256: e95c5209ca2c2998ed387258460986304a2e288ce5d0faba692c4c02ad536737 -->
 
 この文書では、teradataevsui における現在の `multi_format_bookrag` 実装について説明します。VectorStore を作成する前の実行時データフロー、Teradata に永続化される構造、およびノードツリー構築アルゴリズムを中心に扱います。
 
 ## 1. エンドツーエンドのパイプライン
 
 ```mermaid
-flowchart LR
-    DOC[Document files] --> MODE[Multi-Format BookRAG mode]
-    MODE --> WF[Build Unstructured workflow definition]
-    WF --> PART[Partitioner node<br/>auto / hi_res / vlm / fast]
+flowchart TB
+    DOC["Document files"] --> MODE["Multi-Format BookRAG mode"]
+    MODE --> DAG["Build inline job_nodes DAG"]
+    DAG --> PART["Partitioner<br/>auto / hi_res / vlm / fast"]
 
-    PART --> ENRICH{Optional enrichment nodes}
-    ENRICH -->|Image Description| IMG_DESC[Image descriptions]
-    ENRICH -->|Table to HTML| TABLE_HTML[Table HTML]
-    ENRICH -->|Table Description| TABLE_DESC[Table descriptions]
-    ENRICH -->|Generative OCR| GEN_OCR[OCR-enhanced text]
-    ENRICH -->|NER| NER[Entity metadata]
+    PART -->|No prompters| JOB["Unstructured on-demand job"]
+    PART --> ENRICH["Optional ordered prompters<br/>image description / table HTML /<br/>table description / generative OCR / NER"]
+    ENRICH --> JOB
 
-    PART --> JOB[Unstructured on-demand job]
-    IMG_DESC --> JOB
-    TABLE_HTML --> JOB
-    TABLE_DESC --> JOB
-    GEN_OCR --> JOB
-    NER --> JOB
+    JOB --> RAW_JSON["Raw Unstructured output<br/>JSON elements"]
+    RAW_JSON --> RAW_STAGE["Raw stage + parse manifest<br/>uploads/bookrag_raw_stage"]
+    RAW_STAGE --> RECON["Reconcile elements<br/>normalize parentage + metadata"]
 
-    JOB --> RAW_JSON[Raw Unstructured output<br/>JSON elements]
-    RAW_JSON --> RAW_STAGE[Raw stage file<br/>uploads/bookrag_raw_stage]
-    RAW_STAGE --> RECON[Reconcile elements<br/>normalize parentage and metadata]
+    RECON --> DOC_ROWS["Build document rows"]
+    RECON --> RAW_ROWS["Build audit raw rows"]
+    RECON --> BLOCKS["Build normalized blocks"]
+    BLOCKS --> NODES["Build document node tree"]
+    RECON --> ENTITY_GATE{"Graph tables enabled?"}
+    ENTITY_GATE -->|Yes| GRAPH["Build entities + links + relations"]
+    ENTITY_GATE -->|No| SKIP_GRAPH["Skip optional entity graph"]
+    DOC_ROWS --> DOC_RELS["After all documents<br/>derive / import document relations"]
 
-    RECON --> RAW_ROWS[Build raw rows]
-    RECON --> BLOCKS[Build BookRAG blocks]
-    BLOCKS --> NODES[Build document node tree]
-    RECON --> ENTITY_GATE{Entity tables enabled?}
-    ENTITY_GATE -->|Yes| GRAPH[Build entities, links, relations]
-    ENTITY_GATE -->|No| SKIP_GRAPH[Skip entity graph]
-
-    RAW_ROWS --> TD[(Teradata BookRAG tables)]
+    DOC_ROWS --> TD[(Teradata BookRAG tables)]
+    DOC_RELS --> TD
+    RAW_ROWS --> TD
     BLOCKS --> TD
     NODES --> TD
     GRAPH --> TD
 
-    TD --> VS[VectorStore source object<br/>*_bnode]
-    VS --> RETRIEVAL[Retrieval over node content]
+    TD --> VIEW["Governed retrieval view<br/>bdoc + bnode + bdrel"]
+    TD --> VS["VectorStore source<br/>*_bnode"]
+    VIEW --> RETRIEVAL["Governed retrieval<br/>over node content"]
+    VS --> RETRIEVAL
 ```
 
 ## 2. 永続化データモデル
@@ -55,14 +51,19 @@ erDiagram
     DOCUMENTS ||--o{ BLOCKS : "doc_id"
     DOCUMENTS ||--o{ NODES : "doc_id"
     DOCUMENTS ||--o{ ENTITIES : "doc_id"
+    DOCUMENTS ||--o{ ENTITY_LINKS : "doc_id"
+    DOCUMENTS ||--o{ ENTITY_RELATIONS : "doc_id"
     DOCUMENTS ||--o{ DOCUMENT_RELATIONS : "from_doc_id"
     DOCUMENTS ||--o{ DOCUMENT_RELATIONS : "to_doc_id"
 
-    NODES ||--o{ ENTITY_LINKS : "node_id"
-    NODES ||--o{ ENTITY_RELATIONS : "source_node_id"
-    ENTITIES ||--o{ ENTITY_LINKS : "entity_id"
-    ENTITIES ||--o{ ENTITY_RELATIONS : "from_entity_id"
-    ENTITIES ||--o{ ENTITY_RELATIONS : "to_entity_id"
+    NODES ||--o{ NODES : "doc_id + parent_node_id"
+    BLOCKS ||--o{ NODES : "doc_id + source_element_id"
+    BLOCKS ||--o{ ENTITY_RELATIONS : "doc_id + source_element_id"
+    NODES ||--o{ ENTITY_LINKS : "doc_id + node_id"
+    NODES ||--o{ ENTITY_RELATIONS : "doc_id + source_node_id"
+    ENTITIES ||--o{ ENTITY_LINKS : "doc_id + entity_id"
+    ENTITIES ||--o{ ENTITY_RELATIONS : "doc_id + from_entity_id"
+    ENTITIES ||--o{ ENTITY_RELATIONS : "doc_id + to_entity_id"
 
     DOCUMENTS {
         string doc_id PK
@@ -75,6 +76,19 @@ erDiagram
         string filename
         string filetype
         int filesize_bytes
+        int page_count
+        string language_hint
+        string created_at
+        date publication_date
+        string publication_date_source
+        string publication_date_precision
+        string document_series
+        string document_role
+        string logical_document_key
+        int revision_no
+        string metadata_status
+        string metadata_updated_by
+        timestamp metadata_updated_at
     }
 
     RAW {
@@ -143,6 +157,7 @@ erDiagram
         string mention_text
         int page_start
         int page_end
+        int ordinal
         string section_path
     }
 
@@ -157,6 +172,9 @@ erDiagram
         string relationship
         string to_entity_id FK
         string to_entity_text
+        int page_start
+        int page_end
+        int ordinal
         string section_path
     }
 
@@ -168,6 +186,10 @@ erDiagram
         string to_filename
         string relation_description
         string source_type
+        string created_by
+        timestamp created_at
+        string updated_by
+        timestamp updated_at
     }
 ```
 
@@ -175,7 +197,8 @@ erDiagram
 
 ```mermaid
 flowchart TD
-    A[Reconciled Unstructured elements] --> B[Iterate elements in source order]
+    A[Reconciled Unstructured elements] --> ROOT[Create document root node<br/>level = 0, is_leaf = 0]
+    A --> B[Iterate elements in source order]
     B --> C[Read element fields and metadata<br/>element_id, parent_id, page_number,<br/>category_depth, text_as_html]
 
     C --> D{Classify block kind}
@@ -198,7 +221,8 @@ flowchart TD
     LONG -->|Yes| SEGMENT[Split into leaf segments<br/>384 token units, 48 overlap]
     SEGMENT --> LEAF_NODE
 
-    SEC_NODE --> NODE_TABLE[(NODES table)]
+    ROOT --> NODE_TABLE[(NODES table)]
+    SEC_NODE --> NODE_TABLE
     LEAF_NODE --> NODE_TABLE
     NODE_TABLE --> VECTOR[VectorStore retrieval source<br/>key_columns = doc_id, node_id<br/>data_columns = content]
 ```
@@ -206,18 +230,25 @@ flowchart TD
 ## 4. 実行時オブジェクトフロー
 
 ```mermaid
-flowchart LR
-    ELEM[Unstructured element] --> RAW[RAW row]
-    ELEM --> BLK[BookRAG block]
-    BLK --> NODE[BookRAG node]
-    ELEM -->|optional entity metadata| ENT[Entity records]
+flowchart TB
+    DOC["Document + manifest metadata"] --> DOC_ROW["Document row"]
+    ELEM["Unstructured element"] --> RAW["Audit raw row"]
+    ELEM --> BLK["Normalized BookRAG block"]
+    BLK --> NODE["Document / section / leaf nodes"]
+    ELEM -->|Optional NER metadata| ENT["Entity + link + relation rows"]
+    DOC_ROW --> DOC_REL["Run-level document relations"]
 
-    RAW --> RAW_TABLE[*_braw]
-    BLK --> BLOCK_TABLE[*_bblk]
-    NODE --> NODE_TABLE[*_bnode]
-    ENT --> ENTITY_TABLES[*_bent / *_belnk / *_brel]
+    DOC_ROW --> DOC_TABLE["*_bdoc"]
+    RAW --> RAW_TABLE["*_braw"]
+    BLK --> BLOCK_TABLE["*_bblk"]
+    NODE --> NODE_TABLE["*_bnode"]
+    DOC_REL --> DOC_REL_TABLE["*_bdrel"]
+    ENT --> ENTITY_TABLES["*_bent / *_belnk / *_brel"]
 
-    NODE_TABLE --> VS_SRC[VectorStore object_names]
+    DOC_TABLE --> VIEW["*_retrieval_v"]
+    DOC_REL_TABLE --> VIEW
+    NODE_TABLE --> VIEW
+    NODE_TABLE --> VS_SRC["VectorStore object_names"]
 ```
 
 ## 5. テーブル命名規則
